@@ -1,36 +1,165 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SHZ ERP System
+
+A comprehensive Enterprise Resource Planning (ERP) system built with modern web technologies. This system helps businesses manage inventory, sales, finance, tasks, and user permissions through an intuitive interface.
+
+## Features
+
+- **Dashboard**: Overview of key metrics and recent activities
+- **Inventory Management**: Track stock, divided items, and inspection processes
+- **Sales Management**: Customer management, order processing, and invoicing
+- **Finance Module**: Accounts receivable/payable, cash management, and financial reporting
+- **Task Management**: Kanban board with drag-and-drop functionality and calendar view
+- **User Management**: Role-based access control with granular permissions
+- **Responsive Design**: Works on desktop and mobile devices
+
+## Tech Stack
+
+- **Frontend**: Next.js 14 (App Router), React 19, TypeScript
+- **UI Components**: Shadcn UI, Radix UI, Tailwind CSS
+- **State Management**: React Context, SWR for data fetching
+- **Authentication**: NextAuth.js
+- **Database**: Prisma ORM with your preferred database
+- **Styling**: Tailwind CSS with custom theming
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18.17 or later
+- pnpm (recommended) or npm
+- Database (PostgreSQL recommended)
+
+### Installation
+
+1. Clone the repository:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/fajarprasetia/shzerp.git
+cd erp
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm install
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Set up environment variables:
 
-## Learn More
+Create a `.env.local` file in the root directory with the following variables:
 
-To learn more about Next.js, take a look at the following resources:
+```
+DATABASE_URL="postgresql://username:password@localhost:5432/erp"
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="your-secret-key"
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. Run database migrations:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm prisma migrate dev
+```
 
-## Deploy on Vercel
+5. Seed the database with initial data:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+pnpm prisma db seed
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+6. Start the development server:
+
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the application.
+
+## Project Structure
+
+```
+├── app/                  # Next.js App Router
+│   ├── (main)/           # Main application routes
+│   │   ├── dashboard/    # Dashboard module
+│   │   ├── inventory/    # Inventory management
+│   │   ├── sales/        # Sales management
+│   │   ├── finance/      # Finance module
+│   │   ├── tasks/        # Task management
+│   │   └── users/        # User management
+│   ├── api/              # API routes
+│   ├── auth/             # Authentication pages
+│   ├── components/       # Server components
+│   ├── hooks/            # Custom React hooks
+│   ├── lib/              # Utility functions
+│   └── providers/        # Context providers
+├── components/           # Client components
+│   └── ui/               # Reusable UI components
+├── prisma/               # Database schema and migrations
+├── public/               # Static assets
+└── types/                # TypeScript type definitions
+```
+
+## Key Features
+
+### Inventory Management
+
+- Stock tracking with barcode scanning
+- Divided roll management
+- Quality inspection process
+
+### Sales Module
+
+- Customer management with WhatsApp integration
+- Order processing with inventory checks
+- Invoice generation and payment tracking
+
+### Finance Module
+
+- Accounts receivable/payable
+- Cash management
+- General ledger and financial reporting
+
+### Task Management
+
+- Kanban board with drag-and-drop functionality
+- Calendar view with task indicators
+- Task assignment and priority management
+
+### User Management
+
+- Role-based access control
+- Permission management
+- User profiles
+
+## Deployment
+
+The application can be deployed to any platform that supports Next.js applications, such as Vercel, Netlify, or a custom server.
+
+For production deployment, build the application:
+
+```bash
+pnpm build
+```
+
+Then start the production server:
+
+```bash
+pnpm start
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgements
+
+- [Next.js](https://nextjs.org/)
+- [React](https://reactjs.org/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Shadcn UI](https://ui.shadcn.com/)
+- [Radix UI](https://www.radix-ui.com/)
+- [Prisma](https://www.prisma.io/)
+- [NextAuth.js](https://next-auth.js.org/)

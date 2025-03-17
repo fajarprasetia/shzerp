@@ -1,0 +1,478 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Auth Models
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String?   @unique
+  emailVerified  DateTime?
+  image          String?
+  hashedPassword String?
+  isSystemUser   Boolean   @default(false)
+  isSystemAdmin  Boolean   @default(false)
+  roleId         String?
+  role           Role?     @relation(fields: [roleId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  accounts             Account[]
+  sessions             Session[]
+  tasks                Task[]
+  inspectedStock       Stock[]               @relation("InspectedBy")
+  inspectedDivided     Divided[]             @relation("DividedInspectedBy")
+  inspectionLogs       InspectionLog[]       @relation("InspectedBy")
+  financialAccounts    FinancialAccount[]    @relation("UserFinancialAccounts")
+  transactions         Transaction[]
+  notifications        Notification[]
+  financeNotifications FinanceNotification[]
+  payments             Payment[]
+  vendorPayments       VendorPayment[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  name              String
+  category          String
+  subcategory       String?
+  description       String?
+  parentId          String?
+  parent            Account?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children          Account[] @relation("AccountHierarchy")
+  balance           Float     @default(0)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([parentId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Inventory Models
+model Stock {
+  id              String          @id @default(cuid())
+  jumboRollNo     String          @unique
+  barcodeId       String          @unique
+  type            String
+  gsm             Float
+  width           Float
+  length          Float
+  remainingLength Float
+  weight          Float
+  containerNo     String
+  arrivalDate     DateTime
+  note            String?
+  inspected       Boolean         @default(false)
+  inspectedById   String?
+  inspectedAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  inspectedBy     User?           @relation("InspectedBy", fields: [inspectedById], references: [id])
+  divided         Divided[]
+  inspectionLogs  InspectionLog[] @relation("StockInspection")
+  orderItems      OrderItem[]
+}
+
+model Divided {
+  id             String          @id @default(cuid())
+  rollNo         String          @unique
+  barcodeId      String          @unique
+  width          Float
+  length         Float
+  weight         Float?
+  note           String?
+  inspected      Boolean         @default(false)
+  inspectedById  String?
+  inspectedAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  stock          Stock           @relation(fields: [stockId], references: [id])
+  stockId        String
+  inspectedBy    User?           @relation("DividedInspectedBy", fields: [inspectedById], references: [id])
+  inspectionLogs InspectionLog[] @relation("DividedInspection")
+  orderItems     OrderItem[]
+
+  @@map("divided")
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  status      String    @default("todo")
+  priority    String    @default("medium")
+  category    String    @default("work")
+  tags        String[]  @default([])
+  dueDate     DateTime?
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// Sales Models
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String
+  whatsapp  String
+  company   String
+  address   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
+
+  @@map("customers")
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  orderNo     String      @unique
+  customerId  String
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  totalAmount Float       @default(0)
+  orderItems  OrderItem[]
+  note        String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  payments    Payment[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type      String
+  product   String?
+  gsm       String?
+  width     String?
+  length    String?
+  weight    String?
+  quantity  Int      @default(1)
+  price     Float
+  tax       Float    @default(0)
+  stockId   String?
+  stock     Stock?   @relation(fields: [stockId], references: [id])
+  dividedId String?
+  divided   Divided? @relation(fields: [dividedId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("order_items")
+}
+
+model InspectionLog {
+  id             String   @id @default(cuid())
+  type           String // stock_created, divided_created, stock_inspected, divided_inspected
+  itemId         String?  // Make itemId optional
+  itemType       String // stock or divided
+  itemIdentifier String // jumboRollNo or rollNo
+  userId         String
+  userName       String
+  note           String?
+  createdAt      DateTime @default(now())
+  user           User     @relation("InspectedBy", fields: [userId], references: [id], map: "InspectionLog_userId_fkey")
+  stockId        String?  // Add separate stockId field
+  stock          Stock?   @relation("StockInspection", fields: [stockId], references: [id], map: "InspectionLog_stockId_fkey")
+  dividedId      String?  // Add separate dividedId field
+  divided        Divided? @relation("DividedInspection", fields: [dividedId], references: [id], map: "InspectionLog_dividedId_fkey")
+
+  @@index([itemType, itemId])
+  @@index([createdAt])
+}
+
+// Finance Models
+model FinancialAccount {
+  id              String        @id @default(cuid())
+  userId          String
+  name            String
+  type            String // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+  balance         Float         @default(0)
+  currency        String        @default("IDR")
+  lowBalanceAlert Float?
+  isSystemAccount Boolean       @default(false)
+  transactions    Transaction[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  user            User          @relation("UserFinancialAccounts", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("financial_accounts")
+}
+
+model Transaction {
+  id          String           @id @default(cuid())
+  userId      String
+  accountId   String
+  type        String // income, expense
+  amount      Float
+  description String
+  category    String
+  date        DateTime
+  notes       String?
+  tags        String[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("transactions")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  data      Json?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model FinanceNotification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String // transaction, budget, account
+  read      Boolean  @default(false)
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("finance_notifications")
+}
+
+// Journal Entry Models
+model ChartOfAccount {
+  id               String    @id @default(cuid())
+  code             String    @unique
+  name             String
+  type             String
+  category         String
+  subcategory      String?
+  description      String?
+  parentId         String?
+  parent           ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children         ChartOfAccount[] @relation("AccountHierarchy")
+  balance          Float     @default(0)
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  journalEntryItems JournalEntryItem[]
+
+  @@index([parentId])
+}
+
+model JournalEntry {
+  id            String    @id @default(cuid())
+  entryNo       String    @unique
+  date          DateTime
+  description   String
+  reference     String?
+  items         JournalEntryItem[]
+  status        JournalEntryStatus @default(DRAFT)
+  postedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model JournalEntryItem {
+  id            String    @id @default(cuid())
+  journalEntryId String
+  journalEntry  JournalEntry @relation(fields: [journalEntryId], references: [id])
+  accountId     String
+  account       ChartOfAccount   @relation(fields: [accountId], references: [id])
+  debit         Float     @default(0)
+  credit        Float     @default(0)
+  description   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([journalEntryId])
+  @@index([accountId])
+}
+
+enum JournalEntryStatus {
+  DRAFT
+  POSTED
+  VOID
+}
+
+// Budget Models
+model FiscalYear {
+  id            String    @id @default(cuid())
+  name          String
+  startDate     DateTime
+  endDate       DateTime
+  isClosed      Boolean   @default(false)
+  closedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  budgets       Budget[]
+}
+
+model Budget {
+  id            String    @id @default(cuid())
+  name          String
+  fiscalYearId  String
+  fiscalYear    FiscalYear @relation(fields: [fiscalYearId], references: [id])
+  description   String?
+  items         BudgetItem[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([fiscalYearId])
+}
+
+model BudgetItem {
+  id            String    @id @default(cuid())
+  budgetId      String
+  budget        Budget    @relation(fields: [budgetId], references: [id])
+  accountId     String
+  amount        Float
+  actual        Float     @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([budgetId])
+  @@index([accountId])
+}
+
+// Payment Models
+model Payment {
+  id            String    @id @default(cuid())
+  orderId       String
+  order         Order     @relation(fields: [orderId], references: [id])
+  amount        Float
+  paymentDate   DateTime
+  paymentMethod String
+  reference     String?
+  status        String    @default("PENDING") // PENDING, COMPLETED, FAILED
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("payments")
+}
+
+// Vendor Models
+model Vendor {
+  id          String       @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  taxId       String?
+  notes       String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  vendorBills VendorBill[]
+
+  @@map("vendors")
+}
+
+model VendorBill {
+  id          String         @id @default(cuid())
+  billNo      String         @unique
+  vendorId    String
+  vendor      Vendor         @relation(fields: [vendorId], references: [id])
+  amount      Float
+  billDate    DateTime
+  dueDate     DateTime
+  status      String         @default("pending") // draft, pending, paid, overdue
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  payments    VendorPayment[]
+
+  @@map("vendor_bills")
+}
+
+model VendorPayment {
+  id            String    @id @default(cuid())
+  billId        String
+  bill          VendorBill @relation(fields: [billId], references: [id])
+  amount        Float
+  paymentDate   DateTime
+  paymentMethod String
+  reference     String?
+  status        String    @default("pending") // pending, completed, failed
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("vendor_payments")
+}
+
+// Role and Permission Models
+model Role {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String?
+  isAdmin     Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  users       User[]
+  permissions Permission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  resource    String   // The resource/page name (e.g., "users", "inventory", "finance")
+  action      String   // The action allowed (e.g., "read", "write", "delete")
+  roleId      String
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([roleId, resource, action])
+  @@map("permissions")
+}

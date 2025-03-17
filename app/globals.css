@@ -1,0 +1,173 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+ 
+@layer base {
+  :root {
+    --background: 210 50% 96%;
+    --foreground: 210 84% 4.9%;
+ 
+    --card: 210 40% 98%;
+    --card-foreground: 210 84% 4.9%;
+ 
+    --popover: 210 40% 98%;
+    --popover-foreground: 210 84% 4.9%;
+ 
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+ 
+    --secondary: 210 46% 93%;
+    --secondary-foreground: 210 47.4% 11.2%;
+ 
+    --muted: 210 46% 93%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+ 
+    --accent: 210 46% 93%;
+    --accent-foreground: 210 47.4% 11.2%;
+ 
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 210 31.8% 91.4%;
+    --input: 210 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+ 
+    --radius: 0.5rem;
+  }
+ 
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+ 
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+ 
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+ 
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+ 
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+ 
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+ 
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+ 
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+ 
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+  }
+}
+ 
+@layer base {
+  * {
+    @apply border-border;
+  }
+}
+
+/* Glass effect utilities */
+.glass {
+  @apply bg-background/80 dark:bg-gray-950/40 backdrop-blur-[2px] border border-background/20 dark:border-gray-800/20 shadow-sm;
+}
+
+.glass-hover {
+  @apply hover:bg-background/90 dark:hover:bg-gray-900/60 transition-colors duration-300;
+}
+
+.glass-card {
+  @apply glass rounded-xl shadow-lg;
+}
+
+/* Update background colors for cards and other elements */
+.bg-card {
+  @apply bg-background/95;
+}
+
+.bg-white\/60 {
+  @apply bg-background/60;
+}
+
+.bg-white\/80 {
+  @apply bg-background/80;
+}
+
+.bg-white\/90 {
+  @apply bg-background/90;
+}
+
+.hover\:bg-gray-50:hover {
+  @apply hover:bg-background/70;
+}
+
+/* Update icon backgrounds */
+.bg-blue-100 {
+  @apply bg-primary/20;
+}
+
+.bg-green-100 {
+  @apply bg-primary/20;
+}
+
+.bg-purple-100 {
+  @apply bg-primary/20;
+}
+
+.bg-yellow-100 {
+  @apply bg-primary/20;
+}
+
+.bg-gray-100 {
+  @apply bg-primary/20;
+}
+
+/* Custom scrollbar */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  @apply bg-gray-300/50 dark:bg-gray-700/50 rounded-full;
+}
+
+/* Blob animation */
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+} 
