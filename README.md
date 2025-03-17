@@ -31,11 +31,13 @@ A comprehensive Enterprise Resource Planning (ERP) system built with modern web 
 
 ### Installation
 
+#### Option 1: Standard Setup
+
 1. Clone the repository:
 
 ```bash
 git clone https://github.com/fajarprasetia/shzerp.git
-cd erp
+cd shzerp
 ```
 
 2. Install dependencies:
@@ -71,6 +73,37 @@ pnpm prisma db seed
 ```bash
 pnpm dev
 ```
+
+#### Option 2: Docker Setup
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/fajarprasetia/shzerp.git
+cd shzerp
+```
+
+2. Start the application using Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+This will start:
+- The Next.js application on port 3000
+- PostgreSQL database on port 5432
+- pgAdmin (database management tool) on port 5050
+
+3. Run database migrations and seed data:
+
+```bash
+docker-compose exec app npx prisma migrate deploy
+docker-compose exec app npx prisma db seed
+```
+
+4. Access the application at http://localhost:3000
+
+5. Access pgAdmin at http://localhost:5050 (login with admin@example.com / admin)
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the application.
 
@@ -132,6 +165,8 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ## Deployment
 
+### Standard Deployment
+
 The application can be deployed to any platform that supports Next.js applications, such as Vercel, Netlify, or a custom server.
 
 For production deployment, build the application:
@@ -144,6 +179,28 @@ Then start the production server:
 
 ```bash
 pnpm start
+```
+
+### Docker Deployment
+
+For production deployment with Docker:
+
+1. Build and start the containers:
+
+```bash
+docker-compose -f docker-compose.yml up -d --build
+```
+
+2. Run database migrations:
+
+```bash
+docker-compose exec app npx prisma migrate deploy
+```
+
+3. Seed the database (if needed):
+
+```bash
+docker-compose exec app npx prisma db seed
 ```
 
 ## Contributing
