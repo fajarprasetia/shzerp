@@ -1,178 +1,142 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
-import { toast } from "sonner";
-import useSWR from "swr";
-import { User } from "@prisma/client";
-import { withPermission } from "@/app/components/with-permission";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/use-toast";
+import { useRouter } from 'next/navigation';
+import { useTheme } from '@/providers/theme-provider';
 
-// Define the hook inline
-function useUserData() {
-  const fetcher = (url: string) => fetch(url).then(async (res) => {
-    if (!res.ok) {
-      throw new Error('Failed to fetch users');
-    }
-    return res.json();
-  });
+export default function SettingsPage() {
+  const { toast } = useToast();
+  const router = useRouter();
+  const { theme, setTheme } = useTheme();
+  const [notifications, setNotifications] = useState(true);
 
-  const { data, error, isLoading, mutate } = useSWR<User[]>(
-    "/api/users",
-    fetcher
-  );
-
-  return {
-    data: data || [],
-    isLoading,
-    isError: error,
-    mutate,
+  const handleGoBack = () => {
+    router.back();
   };
-}
 
-export default withPermission(function SettingsPage() {
-  const { data: users } = useUserData();
-  const currentUser = users?.[0]; // For demo purposes, using first user
+  const handleSaveSettings = () => {
+    toast({
+      title: 'Settings saved',
+      description: 'Your settings have been saved successfully',
+    });
+  };
 
   return (
     <div className="container mx-auto py-10">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold">Settings</h1>
+      <Button 
+        variant="outline" 
+        onClick={handleGoBack}
+        className="mb-6"
+      >
+        Back
+      </Button>
+      
+      <div className="grid gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Settings</CardTitle>
+            <CardDescription>
+              Manage your account settings and preferences
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="general">
+              <TabsList className="mb-4">
+                <TabsTrigger value="general">General</TabsTrigger>
+                <TabsTrigger value="appearance">Appearance</TabsTrigger>
+                <TabsTrigger value="notifications">Notifications</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="general" className="space-y-4">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-medium">Account Settings</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Manage your account settings and preferences
+                  </p>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="two-factor">Two-factor Authentication</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Add an extra layer of security to your account
+                    </p>
+                  </div>
+                  <Switch id="two-factor" />
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="appearance" className="space-y-4">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-medium">Appearance</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Customize the appearance of the application
+                  </p>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>Theme</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Select your preferred theme
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant={theme === 'light' ? 'default' : 'outline'} 
+                      size="sm"
+                      onClick={() => setTheme('light')}
+                    >
+                      Light
+                    </Button>
+                    <Button 
+                      variant={theme === 'dark' ? 'default' : 'outline'} 
+                      size="sm"
+                      onClick={() => setTheme('dark')}
+                    >
+                      Dark
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="notifications" className="space-y-4">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-medium">Notifications</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Configure how you receive notifications
+                  </p>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="email-notifications">Email Notifications</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Receive notifications via email
+                    </p>
+                  </div>
+                  <Switch 
+                    id="email-notifications" 
+                    checked={notifications}
+                    onCheckedChange={setNotifications}
+                  />
+                </div>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+          <CardFooter className="flex justify-end">
+            <Button onClick={handleSaveSettings}>
+              Save Settings
+            </Button>
+          </CardFooter>
+        </Card>
       </div>
-
-      <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="glass">
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="account">Account</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="profile" className="space-y-6">
-          <Card className="glass">
-            <CardHeader>
-              <CardTitle>Profile</CardTitle>
-              <CardDescription>
-                Manage your public profile information.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center gap-6">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={currentUser?.image || ""} alt={currentUser?.name || ""} />
-                  <AvatarFallback>{currentUser?.name?.[0] || "U"}</AvatarFallback>
-                </Avatar>
-                <Button className="glass glass-hover">Change Avatar</Button>
-              </div>
-
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    defaultValue={currentUser?.name}
-                    className="glass"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    defaultValue={currentUser?.email}
-                    className="glass"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="account" className="space-y-6">
-          <Card className="glass">
-            <CardHeader>
-              <CardTitle>Account</CardTitle>
-              <CardDescription>
-                Update your account settings.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="current-password">Current Password</Label>
-                  <Input
-                    id="current-password"
-                    type="password"
-                    className="glass"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="new-password">New Password</Label>
-                  <Input
-                    id="new-password"
-                    type="password"
-                    className="glass"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="confirm-password">Confirm Password</Label>
-                  <Input
-                    id="confirm-password"
-                    type="password"
-                    className="glass"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="appearance" className="space-y-6">
-          <Card className="glass">
-            <CardHeader>
-              <CardTitle>Appearance</CardTitle>
-              <CardDescription>
-                Customize the appearance of the application.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Theme</Label>
-                  <Button variant="outline" className="glass glass-hover">
-                    Change Theme
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="notifications" className="space-y-6">
-          <Card className="glass">
-            <CardHeader>
-              <CardTitle>Notifications</CardTitle>
-              <CardDescription>
-                Configure how you receive notifications.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Email Notifications</Label>
-                  <Button variant="outline" className="glass glass-hover">
-                    Configure
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
     </div>
   );
-}, "settings", "read"); 
+} 

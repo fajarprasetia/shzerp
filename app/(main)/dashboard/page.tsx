@@ -8,8 +8,16 @@ import { useDashboardData } from "./hooks/use-dashboard-data";
 import { OverviewCards } from "./components/overview-cards";
 import { FinanceSummary } from "./components/finance-summary";
 import { RecentTransactions } from "./components/recent-transactions";
+import { useTranslation } from "react-i18next";
+import { useEffect, useState } from "react";
+// Import our pre-initialized i18n instance
+import i18nInstance from "@/app/i18n";
+import { I18nProvider } from "./components/i18n-provider";
 
 function DashboardPage() {
+  // Use the pre-initialized i18n instance
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const [mounted, setMounted] = useState(false);
   const { 
     inventoryCount, 
     sales, 
@@ -19,26 +27,34 @@ function DashboardPage() {
     isError 
   } = useDashboardData();
 
-  if (isError) {
-    toast.error('Failed to load dashboard data', {
-      description: 'Please try refreshing the page'
-    });
-  }
+  // Only show error toast after mounting to avoid hydration issues
+  useEffect(() => {
+    setMounted(true);
+    
+    if (isError && mounted) {
+      toast.error(t('dashboard.error', 'Dashboard Error'), {
+        description: t('dashboard.errorDesc', 'Failed to load dashboard data')
+      });
+    }
+  }, [isError, mounted, t]);
+
+  // Return a loading placeholder while mounting to avoid hydration issues
+  if (!mounted) return <div className="min-h-screen">Loading...</div>;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t('dashboard.title', 'Dashboard')}</h1>
         <p className="text-muted-foreground">
-          Welcome to your ERP dashboard
+          {t('dashboard.welcome', 'Welcome to your dashboard')}
         </p>
       </div>
       
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
+          <TabsTrigger value="overview">{t('dashboard.overview', 'Overview')}</TabsTrigger>
+          <TabsTrigger value="analytics">{t('dashboard.analytics', 'Analytics')}</TabsTrigger>
+          <TabsTrigger value="reports">{t('dashboard.reports', 'Reports')}</TabsTrigger>
         </TabsList>
         
         <TabsContent value="overview" className="space-y-6">
@@ -77,13 +93,13 @@ function DashboardPage() {
         <TabsContent value="analytics" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Analytics</CardTitle>
+              <CardTitle>{t('dashboard.analytics', 'Analytics')}</CardTitle>
               <CardDescription>
-                View your business analytics and metrics
+                {t('dashboard.analyticsDesc', 'View your business analytics')}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p>Analytics content will be displayed here.</p>
+              <p>{t('dashboard.analyticsContent', 'Analytics content will appear here')}</p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -91,13 +107,13 @@ function DashboardPage() {
         <TabsContent value="reports" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Reports</CardTitle>
+              <CardTitle>{t('dashboard.reports', 'Reports')}</CardTitle>
               <CardDescription>
-                Generate and view business reports
+                {t('dashboard.reportsDesc', 'View and generate reports')}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p>Reports content will be displayed here.</p>
+              <p>{t('dashboard.reportsContent', 'Reports content will appear here')}</p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -106,4 +122,15 @@ function DashboardPage() {
   );
 }
 
-export default withPermission(DashboardPage, "dashboard", "read"); 
+// Wrap the exported component with I18nProvider
+export default withPermission(
+  function WrappedDashboardPage(props: any) {
+    return (
+      <I18nProvider>
+        <DashboardPage {...props} />
+      </I18nProvider>
+    );
+  },
+  "dashboard", 
+  "read"
+); 

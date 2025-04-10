@@ -7,7 +7,7 @@ export async function GET() {
     const now = new Date();
     const month = (now.getMonth() + 1).toString().padStart(2, "0");
     const year = now.getFullYear().toString().slice(-2);
-    const prefix = `SHZ-${month}${year}`;
+    const prefix = `SHZ${year}${month}`;
 
     // Find the latest roll number for the current month and year
     const latestStock = await prisma.stock.findFirst({

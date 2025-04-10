@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { notifyTransactionCreated } from "@/lib/notifications";
@@ -23,12 +23,18 @@ export async function GET() {
       const transactions = await prisma.transaction.findMany({
         orderBy: { date: "desc" },
         include: {
-          bankAccount: {
+          account: {
             select: {
-              accountName: true,
+              name: true,
               currency: true,
             },
           },
+          user: {
+            select: {
+              name: true,
+              email: true
+            }
+          }
         },
       });
 
@@ -62,14 +68,14 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { date, description, amount, type, category, bankAccountId } = body;
+    const { date, description, amount, type, category, accountId } = body;
 
-    if (!date || !description || !amount || !type || !category || !bankAccountId) {
+    if (!date || !description || !amount || !type || !category || !accountId) {
       return new NextResponse("Missing required fields", { status: 400 });
     }
 
     try {
-      // Start a transaction to update both the transaction and bank account
+      // Start a transaction to update both the transaction and financial account
       const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         // Create the transaction
         const transaction = await tx.transaction.create({
@@ -79,22 +85,22 @@ export async function POST(req: Request) {
             amount,
             type,
             category,
-            bankAccountId,
+            accountId,
             userId: session.user.id,
           },
           include: {
-            bankAccount: {
+            account: {
               select: {
-                accountName: true,
+                name: true,
                 currency: true,
               },
             },
           },
         });
 
-        // Update the bank account balance
-        await tx.bankAccount.update({
-          where: { id: bankAccountId },
+        // Update the financial account balance
+        await tx.financialAccount.update({
+          where: { id: accountId },
           data: {
             balance: {
               [type === "credit" ? "increment" : "decrement"]: amount,
@@ -112,7 +118,7 @@ export async function POST(req: Request) {
           console.log("[TRANSACTIONS_POST] Table does not exist yet");
           return new NextResponse("Database table not initialized", { status: 404 });
         } else if (error.code === 'P2025') {
-          return new NextResponse("Bank account not found", { status: 404 });
+          return new NextResponse("Financial account not found", { status: 404 });
         }
       }
       throw error; // Re-throw to be caught by the outer catch
@@ -144,7 +150,7 @@ export async function PUT(request: Request) {
       // Get the original transaction
       const originalTransaction = await prisma.transaction.findUnique({
         where: { id },
-        include: { bankAccount: true },
+        include: { account: true },
       });
 
       if (!originalTransaction) {
@@ -176,8 +182,8 @@ export async function PUT(request: Request) {
             : -(updates.amount || originalTransaction.amount);
 
           // Update account balance
-          await tx.bankAccount.update({
-            where: { id: originalTransaction.bankAccountId },
+          await tx.financialAccount.update({
+            where: { id: originalTransaction.accountId },
             data: {
               balance: {
                 increment: -originalEffect + newEffect,
@@ -247,19 +253,17 @@ export async function DELETE(request: Request) {
         });
 
         // Update account balance
-        await tx.bankAccount.update({
-          where: { id: transaction.bankAccountId },
+        await tx.financialAccount.update({
+          where: { id: transaction.accountId },
           data: {
             balance: {
-              increment: transaction.type === 'credit' 
-                ? -transaction.amount 
-                : transaction.amount,
+              increment: transaction.type === 'credit' ? -transaction.amount : transaction.amount,
             },
           },
         });
       });
 
-      return new NextResponse(null, { status: 204 });
+      return NextResponse.json({ success: true });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2021') {

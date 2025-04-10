@@ -13,6 +13,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import {
   Select,
@@ -21,10 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Budget, BUDGET_CATEGORIES } from "@/types/finance";
 import { useToast } from "@/components/ui/use-toast";
 import { format } from "date-fns";
+import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
+import { useLanguage } from "@/app/providers";
 
 const budgetSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -32,12 +37,13 @@ const budgetSchema = z.object({
     required_error: "Category is required",
   }),
   amount: z.number().positive("Amount must be positive"),
+  period: z.enum(["monthly", "quarterly", "yearly", "custom"], {
+    required_error: "Period is required",
+  }),
   startDate: z.string().transform((str) => new Date(str)),
-  endDate: z.string().transform((str) => new Date(str)),
-  isRecurring: z.boolean(),
-  recurringPeriod: z.enum(["monthly", "quarterly", "yearly"]).optional(),
-  notifications: z.boolean(),
-  notificationThreshold: z.number().min(0).max(100).optional(),
+  endDate: z.string().transform((str) => new Date(str)).optional(),
+  description: z.string().optional(),
+  alertThreshold: z.number().min(0).max(1).default(0.8),
 });
 
 type BudgetFormData = z.infer<typeof budgetSchema>;
@@ -48,8 +54,65 @@ interface BudgetFormProps {
   onCancel: () => void;
 }
 
+// Hard-coded Chinese translations
+const ZH_TRANSLATIONS: { [key: string]: string } = {
+  'finance.budgets.form.title': '预算表单',
+  'finance.budgets.form.name': '预算名称',
+  'finance.budgets.form.amount': '金额',
+  'finance.budgets.form.description': '描述',
+  'finance.budgets.form.submit': '提交',
+  'finance.budgets.form.cancel': '取消',
+  'finance.budgets.form.validation.nameRequired': '请输入预算名称',
+  'finance.budgets.form.validation.amountRequired': '请输入金额',
+  'finance.budgets.form.validation.amountPositive': '金额必须大于0',
+  'common.loading': '加载中...'
+};
+
+// Global translation function that completely bypasses i18n for Chinese
+const forcedTranslate = (key: string, defaultValue: string, language: string, params?: Record<string, any>): string => {
+  // For Chinese, use our hardcoded map
+  if (language === 'zh' && key in ZH_TRANSLATIONS) {
+    let translation = ZH_TRANSLATIONS[key];
+    
+    // Handle parameter substitution
+    if (params) {
+      Object.entries(params).forEach(([param, value]) => {
+        translation = translation.replace(`{{${param}}}`, String(value));
+      });
+    }
+    
+    console.log(`Forced budget form translation for ${key}: ${translation}`);
+    return translation;
+  }
+  
+  // Check if we have translations in the window object
+  if (language === 'zh' && typeof window !== 'undefined' && window.__financeTranslations && window.__financeTranslations[key]) {
+    let translation = window.__financeTranslations[key];
+    
+    // Handle parameter substitution
+    if (params) {
+      Object.entries(params).forEach(([param, value]) => {
+        translation = translation.replace(`{{${param}}}`, String(value));
+      });
+    }
+    
+    return translation;
+  }
+  
+  // Fallback to default value
+  return defaultValue;
+};
+
 export function BudgetForm({ budget, onSuccess, onCancel }: BudgetFormProps) {
   const { toast } = useToast();
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const { language } = useLanguage();
+  
+  // Helper function for translations with fallback
+  const safeT = (key: string, defaultValue: string, params?: Record<string, any>): string => {
+    return forcedTranslate(key, defaultValue, language, params);
+  };
+
   const form = useForm<BudgetFormData>({
     resolver: zodResolver(budgetSchema),
     defaultValues: budget
@@ -57,58 +120,107 @@ export function BudgetForm({ budget, onSuccess, onCancel }: BudgetFormProps) {
           name: budget.name,
           category: budget.category,
           amount: budget.amount,
+          period: budget.period || "monthly",
           startDate: format(new Date(budget.startDate), "yyyy-MM-dd"),
-          endDate: format(new Date(budget.endDate), "yyyy-MM-dd"),
-          isRecurring: budget.isRecurring,
-          recurringPeriod: budget.recurringPeriod,
-          notifications: budget.notifications,
-          notificationThreshold: budget.notificationThreshold,
+          endDate: budget.endDate ? format(new Date(budget.endDate), "yyyy-MM-dd") : undefined,
+          description: budget.description || "",
+          alertThreshold: budget.alertThreshold || 0.8,
         }
       : {
           name: "",
           category: "supplies",
           amount: 0,
+          period: "monthly",
           startDate: format(new Date(), "yyyy-MM-dd"),
           endDate: format(new Date(new Date().setMonth(new Date().getMonth() + 1)), "yyyy-MM-dd"),
-          isRecurring: false,
-          notifications: true,
-          notificationThreshold: 80,
+          description: "",
+          alertThreshold: 0.8,
         },
   });
 
-  const watchIsRecurring = form.watch("isRecurring");
-  const watchNotifications = form.watch("notifications");
+  const watchPeriod = form.watch("period");
 
   const onSubmit = async (data: BudgetFormData) => {
     try {
-      const url = budget
-        ? `/api/finance/budgets/${budget.id}`
-        : "/api/finance/budgets";
-      const method = budget ? "PUT" : "POST";
+      const payload = {
+        ...data,
+        alertThreshold: Number(data.alertThreshold),
+      };
 
-      const response = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+      // For PUT requests, we need the ID
+      if (budget) {
+        payload.id = budget.id;
+      }
+
+      const response = await fetch("/api/finance/budgets", {
+        method: budget ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save budget");
+        const error = await response.json();
+        throw new Error(error.error || "Failed to save budget");
       }
 
       toast({
-        title: `Budget ${budget ? "updated" : "created"} successfully`,
-        variant: "default",
+        title: "Success",
+        description: budget ? "Budget updated" : "Budget created",
       });
+
       onSuccess();
     } catch (error) {
+      console.error("Error saving budget:", error);
       toast({
-        title: "Error",
-        description: error.message,
         variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to save budget",
       });
     }
   };
+
+  const [mounted, setMounted] = useState(false);
+
+  // Add translations when component mounts
+  useEffect(() => {
+    if (mounted && language === 'zh') {
+      console.log('Ensuring Chinese translations for Budget Form');
+      
+      try {
+        // Directly add the resources to i18n
+        i18nInstance.addResources('zh', 'translation', {
+          finance: {
+            budgets: {
+              form: {
+                title: '预算表单',
+                name: '预算名称',
+                amount: '金额',
+                description: '描述',
+                submit: '提交',
+                cancel: '取消',
+                validation: {
+                  nameRequired: '请输入预算名称',
+                  amountRequired: '请输入金额',
+                  amountPositive: '金额必须大于0'
+                }
+              }
+            }
+          }
+        });
+        console.log('Added budget form translations for zh');
+      } catch (e) {
+        console.error('Error adding budget form translations:', e);
+      }
+    }
+    setMounted(true);
+  }, [mounted, language, i18nInstance]);
+
+  // Return a loading placeholder while mounting to avoid hydration issues
+  if (!mounted) {
+    return <div className="p-4">{safeT('common.loading', 'Loading...')}</div>;
+  }
 
   return (
     <Form {...form}>
@@ -118,9 +230,9 @@ export function BudgetForm({ budget, onSuccess, onCancel }: BudgetFormProps) {
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Name</FormLabel>
+              <FormLabel>{safeT('finance.budgets.form.name', 'Budget Name')}</FormLabel>
               <FormControl>
-                <Input placeholder="Enter budget name" {...field} />
+                <Input placeholder="Budget name" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -139,13 +251,13 @@ export function BudgetForm({ budget, onSuccess, onCancel }: BudgetFormProps) {
               >
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select budget category" />
+                    <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {Object.entries(BUDGET_CATEGORIES).map(([key, { label }]) => (
+                  {Object.entries(BUDGET_CATEGORIES).map(([key, category]) => (
                     <SelectItem key={key} value={key}>
-                      {label}
+                      {category.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -160,13 +272,16 @@ export function BudgetForm({ budget, onSuccess, onCancel }: BudgetFormProps) {
           name="amount"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Amount</FormLabel>
+              <FormLabel>{safeT('finance.budgets.form.amount', 'Amount')}</FormLabel>
               <FormControl>
                 <Input
                   type="number"
-                  placeholder="0.00"
+                  placeholder="0"
                   {...field}
-                  onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    field.onChange(value === "" ? 0 : parseFloat(value));
+                  }}
                 />
               </FormControl>
               <FormMessage />
@@ -174,21 +289,48 @@ export function BudgetForm({ budget, onSuccess, onCancel }: BudgetFormProps) {
           )}
         />
 
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="startDate"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Start Date</FormLabel>
+        <FormField
+          control={form.control}
+          name="period"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Period</FormLabel>
+              <Select
+                onValueChange={field.onChange}
+                defaultValue={field.value}
+              >
                 <FormControl>
-                  <Input type="date" {...field} />
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a period" />
+                  </SelectTrigger>
                 </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+                <SelectContent>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="quarterly">Quarterly</SelectItem>
+                  <SelectItem value="yearly">Yearly</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
+        <FormField
+          control={form.control}
+          name="startDate"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Start Date</FormLabel>
+              <FormControl>
+                <Input type="date" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {watchPeriod === "custom" && (
           <FormField
             control={form.control}
             name="endDate"
@@ -202,106 +344,56 @@ export function BudgetForm({ budget, onSuccess, onCancel }: BudgetFormProps) {
               </FormItem>
             )}
           />
-        </div>
-
-        <FormField
-          control={form.control}
-          name="isRecurring"
-          render={({ field }) => (
-            <FormItem className="flex items-center justify-between rounded-lg border p-4">
-              <div className="space-y-0.5">
-                <FormLabel className="text-base">Recurring Budget</FormLabel>
-                <div className="text-sm text-muted-foreground">
-                  Automatically create new budget for each period
-                </div>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-
-        {watchIsRecurring && (
-          <FormField
-            control={form.control}
-            name="recurringPeriod"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Recurring Period</FormLabel>
-                <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select period" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                    <SelectItem value="yearly">Yearly</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
         )}
 
         <FormField
           control={form.control}
-          name="notifications"
+          name="description"
           render={({ field }) => (
-            <FormItem className="flex items-center justify-between rounded-lg border p-4">
-              <div className="space-y-0.5">
-                <FormLabel className="text-base">Budget Alerts</FormLabel>
-                <div className="text-sm text-muted-foreground">
-                  Receive notifications when budget threshold is reached
-                </div>
-              </div>
+            <FormItem>
+              <FormLabel>{safeT('finance.budgets.form.description', 'Description')}</FormLabel>
               <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
+                <Textarea
+                  placeholder="Add notes about this budget"
+                  className="resize-none"
+                  {...field}
                 />
               </FormControl>
+              <FormMessage />
             </FormItem>
           )}
         />
 
-        {watchNotifications && (
-          <FormField
-            control={form.control}
-            name="notificationThreshold"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Alert Threshold (%)</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    {...field}
-                    onChange={(e) => field.onChange(parseInt(e.target.value))}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
+        <FormField
+          control={form.control}
+          name="alertThreshold"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Alert Threshold</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  {...field}
+                  onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                />
+              </FormControl>
+              <FormDescription>
+                Set a threshold (0.0-1.0) to receive notifications when spending reaches this percentage of your budget
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <div className="flex justify-end space-x-2">
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            {safeT('finance.budgets.form.cancel', 'Cancel')}
           </Button>
           <Button type="submit">
-            {budget ? "Update" : "Create"} Budget
+            {safeT('finance.budgets.form.submit', 'Submit')}
           </Button>
         </div>
       </form>

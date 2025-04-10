@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 function generateDividedRollNo(parentRollNo: string, index: number) {
-  return `${parentRollNo}-${String.fromCharCode(65 + index)}`;
+  return `${parentRollNo}${String.fromCharCode(65 + index)}`;
 }
 
 export async function POST(request: Request) {
@@ -59,6 +59,7 @@ export async function POST(request: Request) {
             stockId: parentStock.id,
             width: parentStock.width,
             length,
+            remainingLength: length,
             note,
             inspected: false
           },

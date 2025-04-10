@@ -42,6 +42,7 @@ const RESOURCES = [
   { id: 'sales', name: 'Sales' },
   { id: 'customers', name: 'Customers' },
   { id: 'finance', name: 'Finance' },
+  { id: 'shipment', name: 'Shipment' },
   { id: 'tasks', name: 'Tasks' },
   { id: 'settings', name: 'Settings' },
 ];

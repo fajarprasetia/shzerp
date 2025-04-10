@@ -4,15 +4,20 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
+
 import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -20,100 +25,108 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { format } from "date-fns";
-import { CalendarIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
+import { DatePicker } from "@/components/ui/date-picker";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { LoadingButton } from "@/components/ui/loading-button";
 
 interface Customer {
   id: string;
   name: string;
-  company: string;
-  email: string;
 }
 
-interface InvoiceFormProps {
-  invoice?: {
-    id: string;
-    invoiceNo: string;
-    customerId: string;
-    amount: number;
-    dueDate: Date;
-    status: string;
-  } | null;
-  onSuccess: () => void;
-  onCancel: () => void;
-}
-
-const formSchema = z.object({
-  customerId: z.string().min(1, "Customer is required"),
-  amount: z.number().min(0.01, "Amount must be greater than 0"),
-  dueDate: z.date().min(new Date(), "Due date must be in the future"),
-  notes: z.string().optional(),
-});
-
-export function InvoiceForm({ invoice, onSuccess, onCancel }: InvoiceFormProps) {
-  const [loading, setLoading] = useState(false);
+export function InvoiceForm() {
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const [mounted, setMounted] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
-
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      customerId: invoice?.customerId || "",
-      amount: invoice?.amount || 0,
-      dueDate: invoice?.dueDate || new Date(),
-      notes: "",
-    },
-  });
+  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
+    setMounted(true);
     const fetchCustomers = async () => {
       try {
         const response = await fetch("/api/customers");
-        if (!response.ok) throw new Error("Failed to fetch customers");
         const data = await response.json();
         setCustomers(data);
       } catch (error) {
         console.error("Error fetching customers:", error);
+        toast.error(t('finance.accountsReceivable.invoice.errorFetchingCustomers', 'Error fetching customers'));
       }
     };
 
-    fetchCustomers();
-  }, []);
+    if (mounted) {
+      fetchCustomers();
+    }
+  }, [t, mounted]);
 
-  const onSubmit = async (data: z.infer<typeof formSchema>) => {
+  const formSchema = z.object({
+    customerId: z.string().min(1, {
+      message: t('finance.accountsReceivable.invoice.validation.customerRequired', 'Please select a customer'),
+    }),
+    invoiceNumber: z.string().min(1, {
+      message: t('finance.accountsReceivable.invoice.validation.invoiceNumberRequired', 'Invoice number is required'),
+    }),
+    amount: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
+      message: t('finance.accountsReceivable.invoice.validation.validAmount', 'Please enter a valid amount'),
+    }),
+    invoiceDate: z.date({
+      required_error: t('finance.accountsReceivable.invoice.validation.invoiceDateRequired', 'Invoice date is required'),
+    }),
+    dueDate: z.date({
+      required_error: t('finance.accountsReceivable.invoice.validation.dueDateRequired', 'Due date is required'),
+    }),
+    description: z.string().optional(),
+    paymentTerms: z.string().min(1, {
+      message: t('finance.accountsReceivable.invoice.validation.paymentTermsRequired', 'Payment terms are required'),
+    }),
+  });
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      customerId: "",
+      invoiceNumber: "",
+      amount: "",
+      description: "",
+      paymentTerms: "30",
+    },
+  });
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
-      setLoading(true);
-      const response = await fetch(
-        invoice
-          ? `/api/finance/invoices/${invoice.id}`
-          : "/api/finance/invoices",
-        {
-          method: invoice ? "PUT" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(data),
-        }
-      );
+      setIsLoading(true);
+      const response = await fetch("/api/finance/invoices", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(values),
+      });
 
       if (!response.ok) {
-        throw new Error("Failed to save invoice");
+        throw new Error(t('finance.accountsReceivable.invoice.errorCreating', 'Error creating invoice'));
       }
 
-      onSuccess();
+      toast.success(t('finance.accountsReceivable.invoice.createSuccess', 'Invoice created successfully'));
+      router.push("/finance/accounts-receivable");
     } catch (error) {
-      console.error("Error saving invoice:", error);
+      console.error("Error creating invoice:", error);
+      toast.error(
+        error instanceof Error 
+          ? error.message 
+          : t('finance.accountsReceivable.invoice.genericError', 'An error occurred while creating the invoice')
+      );
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  };
+  }
+
+  // Return a loading placeholder while mounting to avoid hydration issues
+  if (!mounted) {
+    return <div className="p-4">{t('common.loading', 'Loading...')}</div>;
+  }
 
   return (
     <Form {...form}>
@@ -123,21 +136,21 @@ export function InvoiceForm({ invoice, onSuccess, onCancel }: InvoiceFormProps) 
           name="customerId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Customer</FormLabel>
+              <FormLabel>{t('finance.accountsReceivable.invoice.customer', 'Customer')}</FormLabel>
               <Select
-                disabled={loading}
                 onValueChange={field.onChange}
-                value={field.value}
+                defaultValue={field.value}
+                disabled={isLoading}
               >
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a customer" />
+                    <SelectValue placeholder={t('finance.accountsReceivable.invoice.selectCustomer', 'Select a customer')} />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
                   {customers.map((customer) => (
                     <SelectItem key={customer.id} value={customer.id}>
-                      {customer.name} - {customer.company}
+                      {customer.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -147,63 +160,107 @@ export function InvoiceForm({ invoice, onSuccess, onCancel }: InvoiceFormProps) 
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="amount"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Amount</FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  disabled={loading}
-                  placeholder="Enter amount"
-                  {...field}
-                  onChange={(e) => field.onChange(parseFloat(e.target.value))}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="dueDate"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Due Date</FormLabel>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <FormControl>
-                    <Button
-                      variant={"outline"}
-                      className={cn(
-                        "w-full pl-3 text-left font-normal",
-                        !field.value && "text-muted-foreground"
-                      )}
-                    >
-                      {field.value ? (
-                        format(field.value, "PPP")
-                      ) : (
-                        <span>Pick a date</span>
-                      )}
-                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                    </Button>
-                  </FormControl>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={field.value}
-                    onSelect={field.onChange}
-                    disabled={(date) =>
-                      date < new Date() || date < new Date("1900-01-01")
-                    }
-                    initialFocus
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="invoiceNumber"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('finance.accountsReceivable.invoice.invoiceNumber', 'Invoice Number')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={t('finance.accountsReceivable.invoice.enterInvoiceNumber', 'Enter invoice number')}
+                    {...field}
+                    disabled={isLoading}
                   />
-                </PopoverContent>
-              </Popover>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="amount"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('finance.accountsReceivable.invoice.amount', 'Amount (IDR)')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    {...field}
+                    disabled={isLoading}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="invoiceDate"
+            render={({ field }) => (
+              <FormItem className="flex flex-col">
+                <FormLabel>{t('finance.accountsReceivable.invoice.invoiceDate', 'Invoice Date')}</FormLabel>
+                <DatePicker
+                  disabled={isLoading}
+                  selected={field.value}
+                  onSelect={field.onChange}
+                  mode="single"
+                />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="dueDate"
+            render={({ field }) => (
+              <FormItem className="flex flex-col">
+                <FormLabel>{t('finance.accountsReceivable.invoice.dueDate', 'Due Date')}</FormLabel>
+                <DatePicker
+                  disabled={isLoading}
+                  selected={field.value}
+                  onSelect={field.onChange}
+                  mode="single"
+                />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="paymentTerms"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('finance.accountsReceivable.invoice.paymentTerms', 'Payment Terms')}</FormLabel>
+              <Select
+                onValueChange={field.onChange}
+                defaultValue={field.value}
+                disabled={isLoading}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('finance.accountsReceivable.invoice.selectPaymentTerms', 'Select payment terms')} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="7">{t('finance.accountsReceivable.invoice.net7', 'Net 7')}</SelectItem>
+                  <SelectItem value="14">{t('finance.accountsReceivable.invoice.net14', 'Net 14')}</SelectItem>
+                  <SelectItem value="30">{t('finance.accountsReceivable.invoice.net30', 'Net 30')}</SelectItem>
+                  <SelectItem value="60">{t('finance.accountsReceivable.invoice.net60', 'Net 60')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormDescription>
+                {t('finance.accountsReceivable.invoice.paymentTermsDescription', 'Number of days the customer has to pay the invoice')}
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}
@@ -211,34 +268,37 @@ export function InvoiceForm({ invoice, onSuccess, onCancel }: InvoiceFormProps) 
 
         <FormField
           control={form.control}
-          name="notes"
+          name="description"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Notes</FormLabel>
+              <FormLabel>{t('finance.accountsReceivable.invoice.description', 'Description')}</FormLabel>
               <FormControl>
-                <Input
-                  disabled={loading}
-                  placeholder="Add notes (optional)"
+                <Textarea
+                  placeholder={t('finance.accountsReceivable.invoice.enterDescription', 'Enter invoice description')}
                   {...field}
+                  disabled={isLoading}
                 />
               </FormControl>
+              <FormDescription>
+                {t('finance.accountsReceivable.invoice.descriptionHelp', 'Additional details about this invoice')}
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        <div className="flex justify-end gap-4">
+        <div className="flex justify-end space-x-2">
           <Button
             type="button"
             variant="outline"
-            onClick={onCancel}
-            disabled={loading}
+            onClick={() => router.back()}
+            disabled={isLoading}
           >
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
-          <Button type="submit" disabled={loading}>
-            {loading ? "Saving..." : invoice ? "Update" : "Create"}
-          </Button>
+          <LoadingButton type="submit" loading={isLoading}>
+            {t('finance.accountsReceivable.invoice.createInvoice', 'Create Invoice')}
+          </LoadingButton>
         </div>
       </form>
     </Form>

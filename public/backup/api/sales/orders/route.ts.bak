@@ -1,0 +1,356 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
+
+interface OrderItem {
+  type: string;
+  product?: string;
+  gsm?: number;
+  width?: number;
+  length?: number;
+  weight?: number;
+  quantity?: number;
+  price: number;
+  tax: number;
+  stockId?: string;
+  dividedId?: string;
+}
+
+interface CreateOrderRequest {
+  customerId: string;
+  orderItems: {
+    type: string;
+    product?: string;
+    productId: string;
+    gsm?: string;
+    width?: string;
+    length?: string;
+    weight?: string;
+    quantity: number | string;
+    price: number | string;
+  }[];
+  note?: string;
+}
+
+export async function GET() {
+  try {
+    const orders = await prisma.order.findMany({
+      include: {
+        customer: true,
+        orderItems: {
+          include: {
+            stock: true,
+            divided: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
+
+    // Map orders to include the first order item's type
+    const mappedOrders = orders.map(order => ({
+      ...order,
+      type: order.orderItems[0]?.type || "N/A"
+    }));
+
+    return NextResponse.json(mappedOrders);
+  } catch (error) {
+    console.error("Error fetching orders:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch orders" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json() as CreateOrderRequest;
+    console.log("Received order data:", body);
+
+    // Validate required fields
+    if (!body.customerId) {
+      return NextResponse.json({ error: "Customer ID is required" }, { status: 400 });
+    }
+    
+    if (!body.orderItems || body.orderItems.length === 0) {
+      return NextResponse.json({ error: "Order items are required" }, { status: 400 });
+    }
+    
+    // Validate each order item
+    for (const item of body.orderItems) {
+      if (!item.type) {
+        return NextResponse.json({ error: "Type is required for all order items" }, { status: 400 });
+      }
+      
+      // Support both old format (product) and new format (productId)
+      if (!item.productId && !item.product) {
+        return NextResponse.json({ error: "Product selection is required for all order items" }, { status: 400 });
+      }
+      
+      if (!item.price) {
+        return NextResponse.json({ error: "Price is required for all order items" }, { status: 400 });
+      }
+      
+      if (typeof item.quantity === 'undefined' || item.quantity === null) {
+        return NextResponse.json({ error: "Quantity is required for all order items" }, { status: 400 });
+      }
+    }
+    
+    // Calculate total amount
+    let totalAmount = 0;
+    for (const item of body.orderItems) {
+      const price = Number(item.price);
+      const quantity = Number(item.quantity);
+      totalAmount += price * quantity;
+    }
+    
+    // Generate an order number: [CURRENT_YEAR][CURRENT_MONTH][ORDER_COUNT]
+    const now = new Date();
+    const year = now.getFullYear().toString();
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    
+    // Count orders from today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const orderCount = await prisma.order.count({
+      where: {
+        createdAt: {
+          gte: today,
+        },
+      },
+    });
+    
+    const orderNo = `${year}${month}${(orderCount + 1).toString().padStart(4, '0')}`;
+    
+    // Create the order
+    const order = await prisma.order.create({
+      data: {
+        orderNo,
+        customerId: body.customerId,
+        totalAmount,
+        note: body.note || null,
+        orderItems: {
+          create: body.orderItems.map(item => ({
+            type: item.type,
+            // For backward compatibility, use either productId or product
+            productId: item.productId || null,
+            product: item.product || null,
+            gsm: item.gsm || null,
+            width: item.width || null,
+            length: item.length || null,
+            weight: item.weight || null,
+            quantity: Number(item.quantity),
+            price: Number(item.price),
+            tax: Number(item.tax || 0),
+          })),
+        },
+      },
+      include: {
+        customer: {
+          select: {
+            name: true,
+          },
+        },
+        orderItems: true,
+      },
+    });
+    
+    // Update stock quantities
+    for (const item of body.orderItems) {
+      const productId = item.productId || null;
+      const quantity = Number(item.quantity);
+      
+      // Only update stock if productId is provided and quantity is valid
+      if (productId && quantity > 0) {
+        // Check if this is a jumbo roll or a divided stock based on the type and existence
+        const isJumboRoll = item.product === "Jumbo Roll" || item.type === "Jumbo Roll"; 
+        const isRoll = item.product === "Roll" || item.type === "Roll";
+        
+        if (isJumboRoll) {
+          // Update jumbo roll stock
+          await prisma.stock.update({
+            where: {
+              id: productId,
+            },
+            data: {
+              remainingLength: {
+                decrement: quantity,
+              },
+              isSold: true,
+            },
+          });
+        } else if (isRoll) {
+          // Update divided stock
+          await prisma.divided.update({
+            where: {
+              id: productId,
+            },
+            data: {
+              remainingLength: {
+                decrement: quantity,
+              },
+              isSold: true,
+            },
+          });
+        }
+      }
+    }
+    
+    return NextResponse.json(order);
+  } catch (error) {
+    console.error("Error creating order:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to create order" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(req: Request) {
+  try {
+    const data = await req.json();
+    
+    // Get original order
+    const originalOrder = await prisma.order.findUnique({
+      where: { id: data.id },
+      include: {
+        customer: true,
+        orderItems: true
+      }
+    });
+    
+    if (!originalOrder) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+    
+    // Update the order
+    const order = await prisma.order.update({
+      where: {
+        id: data.id
+      },
+      data: {
+        customerId: data.customerId,
+        note: data.note,
+        orderItems: {
+          deleteMany: {},
+          create: data.orderItems.map((item: any) => ({
+            type: item.type,
+            productId: item.productId,
+            gsm: item.gsm,
+            width: item.width,
+            length: item.length,
+            weight: item.weight,
+            quantity: item.quantity,
+            price: item.price,
+            tax: item.tax,
+            stockId: item.stockId,
+            dividedId: item.dividedId,
+          }))
+        }
+      },
+      include: {
+        customer: true,
+        orderItems: true,
+      }
+    });
+
+    // Reset sold status on original items
+    for (const item of originalOrder.orderItems) {
+      if (item.stockId) {
+        await prisma.stock.update({
+          where: { id: item.stockId },
+          data: {
+            isSold: false,
+            orderNo: null,
+            soldDate: null,
+            customerName: null
+          }
+        });
+      }
+      if (item.dividedId) {
+        await prisma.divided.update({
+          where: { id: item.dividedId },
+          data: {
+            isSold: false,
+            orderNo: null,
+            soldDate: null,
+            customerName: null
+          }
+        });
+      }
+    }
+    
+    // Mark new items as sold
+    for (const item of order.orderItems) {
+      if (item.stockId) {
+        await prisma.stock.update({
+          where: { id: item.stockId },
+          data: {
+            isSold: true,
+            orderNo: order.orderNo,
+            soldDate: new Date(),
+            customerName: order.customer.name
+          }
+        });
+      }
+      if (item.dividedId) {
+        await prisma.divided.update({
+          where: { id: item.dividedId },
+          data: {
+            isSold: true,
+            orderNo: order.orderNo,
+            soldDate: new Date(),
+            customerName: order.customer.name
+          }
+        });
+      }
+    }
+
+    return NextResponse.json(order);
+  } catch (error) {
+    console.error('Error updating order:', error);
+    return new NextResponse(
+      JSON.stringify({ 
+        error: "Failed to update order",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }), 
+      { 
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Order ID is required" },
+        { status: 400 }
+      );
+    }
+
+    await prisma.order.delete({
+      where: { id },
+    });
+
+    revalidatePath("/sales/orders");
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting order:", error);
+    return NextResponse.json(
+      { error: "Failed to delete order" },
+      { status: 500 }
+    );
+  }
+} 

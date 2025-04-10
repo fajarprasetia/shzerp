@@ -10,6 +10,76 @@ import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw, Search, Filter, Download, Plus, ArrowUpDown } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
+import { useLanguage } from "@/app/providers";
+
+// Hard-coded Chinese translations
+const ZH_TRANSLATIONS: { [key: string]: string } = {
+  'finance.generalLedgerComponent.title': '总账',
+  'finance.generalLedgerComponent.description': '管理您的会计科目表',
+  'finance.generalLedgerComponent.refresh': '刷新',
+  'finance.generalLedgerComponent.newAccount': '新增账户',
+  'finance.generalLedgerComponent.searchPlaceholder': '搜索账户...',
+  'finance.generalLedgerComponent.filter': '筛选',
+  'finance.generalLedgerComponent.export': '导出',
+  'finance.generalLedgerComponent.accountName': '账户名称',
+  'finance.generalLedgerComponent.type': '类型',
+  'finance.generalLedgerComponent.balance': '余额',
+  'finance.generalLedgerComponent.status': '状态',
+  'finance.generalLedgerComponent.actions': '操作',
+  'finance.generalLedgerComponent.noAccountsFound': '未找到账户。',
+  'finance.generalLedgerComponent.auto': '自动',
+  'finance.generalLedgerComponent.manual': '手动',
+  'finance.generalLedgerComponent.lastSynced': '最后同步时间: {{time}}',
+  'finance.generalLedgerComponent.never': '从未',
+  'finance.generalLedgerComponent.syncingText': '同步中...',
+  'finance.generalLedgerComponent.sync': '同步',
+  'finance.generalLedgerComponent.edit': '编辑',
+  'finance.generalLedgerComponent.showing': '显示 {{filtered}} 个账户（共 {{total}} 个）',
+  'finance.generalLedgerComponent.syncLedger': '同步账本',
+  'finance.generalLedgerComponent.failedAccounts': '加载账户失败',
+  'finance.generalLedgerComponent.failedSync': '同步账户失败',
+  'finance.generalLedgerComponent.syncSuccess': '{{name}} 同步成功',
+  'finance.generalLedgerComponent.noARAPFound': '未找到应收/应付账户可同步',
+  'finance.generalLedgerComponent.syncingARAP': '正在同步应收/应付账户',
+  'common.loading': '加载中...'
+};
+
+// Global translation function that completely bypasses i18n for Chinese
+const forcedTranslate = (key: string, defaultValue: string, language: string, params?: Record<string, any>): string => {
+  // For Chinese, use our hardcoded map
+  if (language === 'zh' && key in ZH_TRANSLATIONS) {
+    let translation = ZH_TRANSLATIONS[key];
+    
+    // Handle parameter substitution
+    if (params) {
+      Object.entries(params).forEach(([param, value]) => {
+        translation = translation.replace(`{{${param}}}`, String(value));
+      });
+    }
+    
+    console.log(`Forced general ledger component translation for ${key}: ${translation}`);
+    return translation;
+  }
+  
+  // Check if we have translations in the window object
+  if (language === 'zh' && typeof window !== 'undefined' && window.__financeTranslations && window.__financeTranslations[key]) {
+    let translation = window.__financeTranslations[key];
+    
+    // Handle parameter substitution
+    if (params) {
+      Object.entries(params).forEach(([param, value]) => {
+        translation = translation.replace(`{{${param}}}`, String(value));
+      });
+    }
+    
+    return translation;
+  }
+  
+  // Fallback to default value
+  return defaultValue;
+};
 
 interface Account {
   id: string;
@@ -27,19 +97,75 @@ export function GeneralLedger() {
   const [sortColumn, setSortColumn] = useState<string>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const { language } = useLanguage();
+  
+  // Helper function for translations with fallback
+  const safeT = (key: string, defaultValue: string, params?: Record<string, any>): string => {
+    return forcedTranslate(key, defaultValue, language, params);
+  };
+  
+  // Add translations when component mounts
+  useEffect(() => {
+    if (mounted && language === 'zh') {
+      console.log('Ensuring Chinese translations for General Ledger Component');
+      
+      try {
+        // Directly add the resources to i18n
+        i18nInstance.addResources('zh', 'translation', {
+          finance: {
+            generalLedgerComponent: {
+              title: '总账',
+              description: '管理您的会计科目表',
+              refresh: '刷新',
+              newAccount: '新增账户',
+              searchPlaceholder: '搜索账户...',
+              filter: '筛选',
+              export: '导出',
+              accountName: '账户名称',
+              type: '类型',
+              balance: '余额',
+              status: '状态',
+              actions: '操作',
+              noAccountsFound: '未找到账户。',
+              auto: '自动',
+              manual: '手动',
+              lastSynced: '最后同步时间: {{time}}',
+              never: '从未',
+              syncingText: '同步中...',
+              sync: '同步',
+              edit: '编辑',
+              showing: '显示 {{filtered}} 个账户（共 {{total}} 个）',
+              syncLedger: '同步账本',
+              failedAccounts: '加载账户失败',
+              failedSync: '同步账户失败',
+              syncSuccess: '{{name}} 同步成功',
+              noARAPFound: '未找到应收/应付账户可同步',
+              syncingARAP: '正在同步应收/应付账户'
+            }
+          }
+        });
+        console.log('Added general ledger component translations for zh');
+      } catch (e) {
+        console.error('Error adding general ledger component translations:', e);
+      }
+    }
+    setMounted(true);
+  }, [mounted, language, i18nInstance]);
 
   const fetchAccounts = async () => {
     setLoading(true);
     try {
       const response = await fetch("/api/finance/accounts");
       if (!response.ok) {
-        throw new Error("Failed to fetch accounts");
+        throw new Error(safeT('finance.generalLedgerComponent.failedAccounts', 'Failed to fetch accounts'));
       }
       const data = await response.json();
       setAccounts(data);
     } catch (error) {
       console.error("Error fetching accounts:", error);
-      toast.error("Failed to load accounts");
+      toast.error(safeT('finance.generalLedgerComponent.failedAccounts', 'Failed to load accounts'));
     } finally {
       setLoading(false);
     }
@@ -66,7 +192,7 @@ export function GeneralLedger() {
       });
       
       if (!response.ok) {
-        throw new Error("Failed to sync account");
+        throw new Error(safeT('finance.generalLedgerComponent.failedSync', 'Failed to sync account'));
       }
       
       const data = await response.json();
@@ -82,10 +208,10 @@ export function GeneralLedger() {
           : account
       ));
       
-      toast.success(`${data.name} synced successfully`);
+      toast.success(safeT('finance.generalLedgerComponent.syncSuccess', '${data.name} synced successfully', { name: data.name }));
     } catch (error) {
       console.error("Error syncing account:", error);
-      toast.error("Failed to sync account");
+      toast.error(safeT('finance.generalLedgerComponent.failedSync', 'Failed to sync account'));
     } finally {
       setSyncing(null);
     }
@@ -112,7 +238,7 @@ export function GeneralLedger() {
   });
 
   const formatDate = (dateString?: string) => {
-    if (!dateString) return "Never";
+    if (!dateString) return safeT('finance.generalLedgerComponent.never', 'Never');
     const date = new Date(dateString);
     return new Intl.DateTimeFormat('id-ID', {
       year: 'numeric',
@@ -134,23 +260,28 @@ export function GeneralLedger() {
     
     return typeMap[type.toLowerCase()] || "bg-gray-100 text-gray-800";
   };
+  
+  // Return a loading placeholder while mounting to avoid hydration issues
+  if (!mounted) {
+    return <div className="p-4">{safeT('common.loading', 'Loading...')}</div>;
+  }
 
   return (
     <Card>
       <CardHeader>
         <div className="flex justify-between items-center">
           <div>
-            <CardTitle>General Ledger</CardTitle>
-            <CardDescription>Manage your chart of accounts</CardDescription>
+            <CardTitle>{safeT('finance.generalLedgerComponent.title', 'General Ledger')}</CardTitle>
+            <CardDescription>{safeT('finance.generalLedgerComponent.description', 'Manage your chart of accounts')}</CardDescription>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={fetchAccounts}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
+              {safeT('finance.generalLedgerComponent.refresh', 'Refresh')}
             </Button>
             <Button variant="default" size="sm">
               <Plus className="h-4 w-4 mr-2" />
-              New Account
+              {safeT('finance.generalLedgerComponent.newAccount', 'New Account')}
             </Button>
           </div>
         </div>
@@ -161,7 +292,7 @@ export function GeneralLedger() {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search accounts..."
+              placeholder={safeT('finance.generalLedgerComponent.searchPlaceholder', 'Search accounts...')}
               className="pl-8"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -170,11 +301,11 @@ export function GeneralLedger() {
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm">
               <Filter className="h-4 w-4 mr-2" />
-              Filter
+              {safeT('finance.generalLedgerComponent.filter', 'Filter')}
             </Button>
             <Button variant="outline" size="sm">
               <Download className="h-4 w-4 mr-2" />
-              Export
+              {safeT('finance.generalLedgerComponent.export', 'Export')}
             </Button>
           </div>
         </div>
@@ -194,7 +325,7 @@ export function GeneralLedger() {
                 <TableRow>
                   <TableHead className="w-[300px] cursor-pointer" onClick={() => handleSort("name")}>
                     <div className="flex items-center">
-                      Account Name
+                      {safeT('finance.generalLedgerComponent.accountName', 'Account Name')}
                       {sortColumn === "name" && (
                         <ArrowUpDown className="ml-2 h-4 w-4" />
                       )}
@@ -202,7 +333,7 @@ export function GeneralLedger() {
                   </TableHead>
                   <TableHead className="cursor-pointer" onClick={() => handleSort("type")}>
                     <div className="flex items-center">
-                      Type
+                      {safeT('finance.generalLedgerComponent.type', 'Type')}
                       {sortColumn === "type" && (
                         <ArrowUpDown className="ml-2 h-4 w-4" />
                       )}
@@ -210,21 +341,21 @@ export function GeneralLedger() {
                   </TableHead>
                   <TableHead className="text-right cursor-pointer" onClick={() => handleSort("balance")}>
                     <div className="flex items-center justify-end">
-                      Balance
+                      {safeT('finance.generalLedgerComponent.balance', 'Balance')}
                       {sortColumn === "balance" && (
                         <ArrowUpDown className="ml-2 h-4 w-4" />
                       )}
                     </div>
                   </TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-center">{safeT('finance.generalLedgerComponent.status', 'Status')}</TableHead>
+                  <TableHead className="text-right">{safeT('finance.generalLedgerComponent.actions', 'Actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedAccounts.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="h-24 text-center">
-                      No accounts found.
+                      {safeT('finance.generalLedgerComponent.noAccountsFound', 'No accounts found.')}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -235,7 +366,7 @@ export function GeneralLedger() {
                           {account.name}
                           {account.isAutomated && (
                             <Badge variant="outline" className="ml-2 bg-blue-50">
-                              Auto
+                              {safeT('finance.generalLedgerComponent.auto', 'Auto')}
                             </Badge>
                           )}
                         </div>
@@ -251,10 +382,10 @@ export function GeneralLedger() {
                       <TableCell className="text-center">
                         {account.isAutomated ? (
                           <div className="text-xs text-muted-foreground">
-                            Last synced: {formatDate(account.lastSynced)}
+                            {safeT('finance.generalLedgerComponent.lastSynced', 'Last synced: {{time}}', { time: formatDate(account.lastSynced) })}
                           </div>
                         ) : (
-                          <Badge variant="outline">Manual</Badge>
+                          <Badge variant="outline">{safeT('finance.generalLedgerComponent.manual', 'Manual')}</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
@@ -269,18 +400,18 @@ export function GeneralLedger() {
                               {syncing === account.id ? (
                                 <>
                                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                                  Syncing...
+                                  {safeT('finance.generalLedgerComponent.syncingText', 'Syncing...')}
                                 </>
                               ) : (
                                 <>
                                   <RefreshCw className="h-4 w-4 mr-2" />
-                                  Sync
+                                  {safeT('finance.generalLedgerComponent.sync', 'Sync')}
                                 </>
                               )}
                             </Button>
                           ) : (
                             <Button variant="outline" size="sm">
-                              Edit
+                              {safeT('finance.generalLedgerComponent.edit', 'Edit')}
                             </Button>
                           )}
                         </div>
@@ -295,7 +426,8 @@ export function GeneralLedger() {
       </CardContent>
       <CardFooter className="flex justify-between">
         <div className="text-sm text-muted-foreground">
-          Showing {filteredAccounts.length} of {accounts.length} accounts
+          {safeT('finance.generalLedgerComponent.showing', 'Showing {{filtered}} of {{total}} accounts', 
+            { filtered: filteredAccounts.length.toString(), total: accounts.length.toString() })}
         </div>
         <Button variant="outline" size="sm" onClick={() => {
           const arAccount = accounts.find(a => a.name.toLowerCase().includes("receivable"));
@@ -312,13 +444,13 @@ export function GeneralLedger() {
           }
           
           if (!arAccount && !apAccount) {
-            toast.error("No AR/AP accounts found to sync");
+            toast.error(safeT('finance.generalLedgerComponent.noARAPFound', 'No AR/AP accounts found to sync'));
           } else {
-            toast.success("Syncing AR/AP accounts");
+            toast.success(safeT('finance.generalLedgerComponent.syncingARAP', 'Syncing AR/AP accounts'));
           }
         }}>
           <RefreshCw className="h-4 w-4 mr-2" />
-          Sync Ledger
+          {safeT('finance.generalLedgerComponent.syncLedger', 'Sync Ledger')}
         </Button>
       </CardFooter>
     </Card>

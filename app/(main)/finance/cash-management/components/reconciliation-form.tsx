@@ -26,6 +26,57 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
+import { useLanguage } from "@/app/providers";
+
+// Hard-coded Chinese translations
+const ZH_TRANSLATIONS: { [key: string]: string } = {
+  'finance.reconciliationForm.date': '日期',
+  'finance.reconciliationForm.bankAccount': '银行账户',
+  'finance.reconciliationForm.selectBankAccount': '选择银行账户',
+  'finance.reconciliationForm.statementBalance': '对账单余额',
+  'finance.reconciliationForm.notes': '备注',
+  'finance.reconciliationForm.manualReconciliation': '手动对账',
+  'finance.reconciliationForm.autoReconciliation': '自动对账',
+  'finance.reconciliationForm.creating': '创建中...',
+  'finance.reconciliationForm.createReconciliation': '创建对账',
+  'finance.reconciliationForm.autoReconcile': '自动对账',
+  'finance.reconciliationForm.autoReconciling': '自动对账中...',
+  'finance.reconciliationForm.processing': '处理中...',
+  'finance.reconciliationForm.autoReconcileTransactions': '自动对账交易',
+  'finance.reconciliationForm.autoReconcileDescription': '自动匹配交易并标记为已对账',
+  'finance.reconciliationForm.errorCreating': '创建对账失败',
+  'finance.reconciliationForm.errorAutoReconcile': '自动对账失败',
+  'finance.reconciliationForm.success': '成功',
+  'finance.reconciliationForm.successMessage': '对账创建成功',
+  'finance.reconciliationForm.autoReconciliationComplete': '自动对账完成',
+  'finance.reconciliationForm.partialReconciliation': '部分对账',
+  'finance.reconciliationForm.reconciledTransactions': '成功对账交易 {{count}} 笔',
+  'finance.reconciliationForm.manualReviewRequired': '发现差额 {{difference}}。需要手动检查。',
+  'common.error': '错误'
+};
+
+// Global translation function that completely bypasses i18n for Chinese
+const forcedTranslate = (key: string, defaultValue: string, language: string, params?: Record<string, any>): string => {
+  // For Chinese, use our hardcoded map
+  if (language === 'zh' && key in ZH_TRANSLATIONS) {
+    let translation = ZH_TRANSLATIONS[key];
+    
+    // Handle parameter substitution
+    if (params) {
+      Object.entries(params).forEach(([param, value]) => {
+        translation = translation.replace(`{{${param}}}`, String(value));
+      });
+    }
+    
+    console.log(`Forced reconciliation form translation for ${key}: ${translation}`);
+    return translation;
+  }
+  
+  // Fallback to default value
+  return defaultValue;
+};
 
 interface BankAccount {
   id: string;
@@ -51,7 +102,58 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
   const [autoReconciling, setAutoReconciling] = useState(false);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<BankAccount | null>(null);
+  const [mounted, setMounted] = useState(false);
   const { toast } = useToast();
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const { language } = useLanguage();
+
+  // Helper function for translations with fallback
+  const safeT = (key: string, defaultValue: string, params?: Record<string, any>): string => {
+    return forcedTranslate(key, defaultValue, language, params);
+  };
+
+  // Add translations when component mounts
+  useEffect(() => {
+    if (mounted && language === 'zh') {
+      console.log('Ensuring Chinese translations for Reconciliation Form component');
+      
+      try {
+        // Directly add the resources to i18n
+        i18nInstance.addResources('zh', 'translation', {
+          finance: {
+            reconciliationForm: {
+              date: '日期',
+              bankAccount: '银行账户',
+              selectBankAccount: '选择银行账户',
+              statementBalance: '对账单余额',
+              notes: '备注',
+              manualReconciliation: '手动对账',
+              autoReconciliation: '自动对账',
+              creating: '创建中...',
+              createReconciliation: '创建对账',
+              autoReconcile: '自动对账',
+              autoReconciling: '自动对账中...',
+              processing: '处理中...',
+              autoReconcileTransactions: '自动对账交易',
+              autoReconcileDescription: '自动匹配交易并标记为已对账',
+              errorCreating: '创建对账失败',
+              errorAutoReconcile: '自动对账失败',
+              success: '成功',
+              successMessage: '对账创建成功',
+              autoReconciliationComplete: '自动对账完成',
+              partialReconciliation: '部分对账',
+              reconciledTransactions: '成功对账交易 {{count}} 笔',
+              manualReviewRequired: '发现差额 {{difference}}。需要手动检查。'
+            }
+          }
+        });
+        console.log('Added reconciliation form translations for zh');
+      } catch (e) {
+        console.error('Error adding reconciliation form translations:', e);
+      }
+    }
+    setMounted(true);
+  }, [mounted, language, i18nInstance]);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -94,6 +196,11 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
     }
   }, [watchBankAccountId, accounts, form]);
 
+  // Return a loading placeholder while mounting to avoid hydration issues
+  if (!mounted) {
+    return null;
+  }
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
       setLoading(true);
@@ -109,8 +216,8 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
     } catch (error) {
       console.error("Error creating reconciliation:", error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create reconciliation",
+        title: safeT("common.error", "Error"),
+        description: error instanceof Error ? error.message : safeT("finance.reconciliationForm.errorCreating", "Failed to create reconciliation"),
         variant: "destructive",
       });
     } finally {
@@ -129,12 +236,12 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
     });
 
     if (!response.ok) {
-      throw new Error("Failed to create reconciliation");
+      throw new Error(safeT("finance.reconciliationForm.errorCreating", "Failed to create reconciliation"));
     }
     
     toast({
-      title: "Success",
-      description: "Reconciliation created successfully",
+      title: safeT("finance.reconciliationForm.success", "Success"),
+      description: safeT("finance.reconciliationForm.successMessage", "Reconciliation created successfully"),
     });
   }
   
@@ -154,16 +261,18 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to auto-reconcile");
+        throw new Error(safeT("finance.reconciliationForm.errorAutoReconcile", "Failed to auto-reconcile"));
       }
       
       const result = await response.json();
       
       toast({
-        title: result.isFullyReconciled ? "Auto-Reconciliation Complete" : "Partial Reconciliation",
+        title: result.isFullyReconciled 
+          ? safeT("finance.reconciliationForm.autoReconciliationComplete", "Auto-Reconciliation Complete") 
+          : safeT("finance.reconciliationForm.partialReconciliation", "Partial Reconciliation"),
         description: result.isFullyReconciled 
-          ? `Successfully reconciled ${result.transactionsCount} transactions` 
-          : `Found a difference of ${result.reconciliation.difference}. Manual review required.`,
+          ? safeT("finance.reconciliationForm.reconciledTransactions", `Successfully reconciled ${result.transactionsCount} transactions`, { count: result.transactionsCount }) 
+          : safeT("finance.reconciliationForm.manualReviewRequired", `Found a difference of ${result.reconciliation.difference}. Manual review required.`, { difference: result.reconciliation.difference }),
         variant: result.isFullyReconciled ? "default" : "warning",
       });
     } finally {
@@ -174,8 +283,12 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
   return (
     <Tabs defaultValue="manual">
       <TabsList className="grid w-full grid-cols-2 mb-4">
-        <TabsTrigger value="manual">Manual Reconciliation</TabsTrigger>
-        <TabsTrigger value="auto">Auto Reconciliation</TabsTrigger>
+        <TabsTrigger value="manual">
+          {safeT("finance.reconciliationForm.manualReconciliation", "Manual Reconciliation")}
+        </TabsTrigger>
+        <TabsTrigger value="auto">
+          {safeT("finance.reconciliationForm.autoReconciliation", "Auto Reconciliation")}
+        </TabsTrigger>
       </TabsList>
       
       <TabsContent value="manual">
@@ -186,7 +299,7 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               name="date"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Date</FormLabel>
+                  <FormLabel>{safeT("finance.reconciliationForm.date", "Date")}</FormLabel>
                   <FormControl>
                     <Input type="date" {...field} />
                   </FormControl>
@@ -200,14 +313,14 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               name="bankAccountId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Bank Account</FormLabel>
+                  <FormLabel>{safeT("finance.reconciliationForm.bankAccount", "Bank Account")}</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select bank account" />
+                        <SelectValue placeholder={safeT("finance.reconciliationForm.selectBankAccount", "Select bank account")} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -228,7 +341,7 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               name="statementBalance"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Statement Balance</FormLabel>
+                  <FormLabel>{safeT("finance.reconciliationForm.statementBalance", "Statement Balance")}</FormLabel>
                   <FormControl>
                     <Input type="number" step="0.01" {...field} />
                   </FormControl>
@@ -242,7 +355,7 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               name="notes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Notes</FormLabel>
+                  <FormLabel>{safeT("finance.reconciliationForm.notes", "Notes")}</FormLabel>
                   <FormControl>
                     <Textarea {...field} />
                   </FormControl>
@@ -255,10 +368,10 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
+                  {safeT("finance.reconciliationForm.creating", "Creating...")}
                 </>
               ) : (
-                "Create Reconciliation"
+                safeT("finance.reconciliationForm.createReconciliation", "Create Reconciliation")
               )}
             </Button>
           </form>
@@ -273,7 +386,7 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               name="date"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Date</FormLabel>
+                  <FormLabel>{safeT("finance.reconciliationForm.date", "Date")}</FormLabel>
                   <FormControl>
                     <Input type="date" {...field} />
                   </FormControl>
@@ -287,14 +400,14 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               name="bankAccountId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Bank Account</FormLabel>
+                  <FormLabel>{safeT("finance.reconciliationForm.bankAccount", "Bank Account")}</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select bank account" />
+                        <SelectValue placeholder={safeT("finance.reconciliationForm.selectBankAccount", "Select bank account")} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -315,7 +428,7 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               name="statementBalance"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Statement Balance</FormLabel>
+                  <FormLabel>{safeT("finance.reconciliationForm.statementBalance", "Statement Balance")}</FormLabel>
                   <FormControl>
                     <Input type="number" step="0.01" {...field} />
                   </FormControl>
@@ -329,7 +442,7 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               name="notes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Notes</FormLabel>
+                  <FormLabel>{safeT("finance.reconciliationForm.notes", "Notes")}</FormLabel>
                   <FormControl>
                     <Textarea {...field} />
                   </FormControl>
@@ -351,10 +464,10 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
                   </FormControl>
                   <div className="space-y-1 leading-none">
                     <FormLabel>
-                      Auto-reconcile transactions
+                      {safeT("finance.reconciliationForm.autoReconcileTransactions", "Auto-reconcile transactions")}
                     </FormLabel>
                     <p className="text-sm text-muted-foreground">
-                      Automatically match transactions and mark them as reconciled
+                      {safeT("finance.reconciliationForm.autoReconcileDescription", "Automatically match transactions and mark them as reconciled")}
                     </p>
                   </div>
                 </FormItem>
@@ -365,15 +478,15 @@ export function ReconciliationForm({ onSuccess }: ReconciliationFormProps) {
               {autoReconciling ? (
                 <>
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                  Auto-Reconciling...
+                  {safeT("finance.reconciliationForm.autoReconciling", "Auto-Reconciling...")}
                 </>
               ) : loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
+                  {safeT("finance.reconciliationForm.processing", "Processing...")}
                 </>
               ) : (
-                "Auto-Reconcile"
+                safeT("finance.reconciliationForm.autoReconcile", "Auto-Reconcile")
               )}
             </Button>
           </form>

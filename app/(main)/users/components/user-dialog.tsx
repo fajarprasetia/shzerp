@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { User } from "@prisma/client";
+import { User, Role } from "@prisma/client";
 import { 
   Dialog, 
   DialogContent, 
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { UserForm } from "./user-form";
 import { toast } from "@/components/ui/use-toast";
+import useSWR from "swr";
 
 interface UserDialogProps {
   isOpen: boolean;
@@ -22,6 +23,18 @@ interface UserDialogProps {
 export function UserDialog({ isOpen, onClose, user, onSuccess }: UserDialogProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const isEditing = !!user;
+
+  // Fetch roles for the dropdown
+  const { data: roles, error: rolesError } = useSWR<Role[]>(
+    isOpen ? "/api/roles" : null,
+    async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("Failed to fetch roles");
+      }
+      return response.json();
+    }
+  );
 
   const handleSubmit = async (data: any) => {
     try {
@@ -67,6 +80,17 @@ export function UserDialog({ isOpen, onClose, user, onSuccess }: UserDialogProps
     }
   };
 
+  // Show error if roles couldn't be fetched
+  React.useEffect(() => {
+    if (rolesError) {
+      toast({
+        title: "Error",
+        description: "Failed to load roles. Some features may be limited.",
+        variant: "destructive",
+      });
+    }
+  }, [rolesError]);
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[600px]">
@@ -82,6 +106,7 @@ export function UserDialog({ isOpen, onClose, user, onSuccess }: UserDialogProps
           initialData={user} 
           onSubmit={handleSubmit} 
           onCancel={onClose} 
+          roles={roles || []}
         />
       </DialogContent>
     </Dialog>

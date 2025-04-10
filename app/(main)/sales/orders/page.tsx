@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { Plus, MoreVertical } from "lucide-react";
@@ -15,29 +15,167 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { OrderForm } from "./components/order-form";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { withPermission } from "@/app/components/with-permission";
 import { PermissionGate } from "@/app/components/permission-gate";
-import Link from "next/link";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
+import { getColumns, OrderViewDialog } from "./columns";
+import { I18nProvider } from './components/i18n-provider';
 
-interface OrderWithCustomer extends Order {
+// Update interface to match OrderWithRelations in columns.tsx
+interface OrderWithCustomer {
+  id: string;
+  orderNo: string;
+  customerId: string;
+  sales: string;
+  type: string;
+  totalAmount: number;
+  tax: number;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
   customer: {
     name: string;
+    company: string;
   };
-  orderItems: OrderItem[];
-  status?: "pending" | "completed" | "cancelled";
-  journalEntryId?: string | null;
+  orderItems: any[];
+  note: string | null;
+  paymentStatus: string | null;
+  paymentImage: string | null;
+  paymentMethod: string | null;
+  reference: string | null;
+  journalEntryId: string | null;
+}
+
+interface OrderFormProps {
+  initialData?: OrderWithCustomer;
+  onSubmit: (data: any) => Promise<void>;
+  onCancel: () => void;
 }
 
 function OrdersPage() {
   const [orders, setOrders] = useState<OrderWithCustomer[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderWithCustomer | null>(null);
+  const [viewingOrder, setViewingOrder] = useState<OrderWithCustomer | null>(null);
+  const [showViewDialog, setShowViewDialog] = useState(false);
   const { toast } = useToast();
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const [mounted, setMounted] = useState(false);
 
-  // Add state for account setup
-  const [isSettingUpAccounts, setIsSettingUpAccounts] = useState(false);
+  const handleEditOrder = async (order: OrderWithCustomer) => {
+    try {
+      // Fetch the full order data including all relations
+      const response = await fetch(`/api/sales/orders/${order.id}`);
+      if (!response.ok) throw new Error("Failed to fetch order details");
+      const orderData = await response.json();
+      setSelectedOrder(orderData);
+      setShowForm(true);
+    } catch (error) {
+      console.error("Error fetching order details:", error);
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('sales.orders.fetchError', 'Failed to fetch order details'),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleViewOrder = async (order: OrderWithCustomer) => {
+    try {
+      // Fetch the full order data including all relations
+      const response = await fetch(`/api/sales/orders/${order.id}`);
+      if (!response.ok) throw new Error("Failed to fetch order details");
+      const orderData = await response.json();
+      setViewingOrder(orderData);
+      setShowViewDialog(true);
+    } catch (error) {
+      console.error("Error fetching order details:", error);
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('sales.orders.fetchError', 'Failed to fetch order details'),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleNewOrder = () => {
+    setSelectedOrder(null);
+    setShowForm(true);
+  };
+  
+  const columns: ColumnDef<OrderWithCustomer>[] = useMemo(() => 
+    getColumns(t, toast, handleEditOrder, handleViewOrder), 
+    [t, toast, handleEditOrder, handleViewOrder]
+  );
+
+  useEffect(() => {
+    setMounted(true);
+    fetchOrders();
+  }, []);
+
+  const handleFormSubmit = async (data: any) => {
+    try {
+      const url = selectedOrder 
+        ? `/api/sales/orders/${selectedOrder.id}`
+        : '/api/sales/orders';
+        
+      console.log('[handleFormSubmit] Submitting order:', {
+        url,
+        method: selectedOrder ? 'PUT' : 'POST',
+        data
+      });
+
+      const response = await fetch(url, {
+        method: selectedOrder ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      const responseData = await response.json();
+      console.log('[handleFormSubmit] API response:', {
+        status: response.status,
+        data: responseData
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          responseData.details || 
+          responseData.error || 
+          `Failed to save order: ${response.status}`
+        );
+      }
+
+      toast({
+        title: t('common.success', 'Success'),
+        description: selectedOrder 
+          ? t('sales.orders.updateSuccess', 'Order updated successfully')
+          : t('sales.orders.createSuccess', 'Order created successfully'),
+      });
+
+      setShowForm(false);
+      setSelectedOrder(null);
+      fetchOrders();
+    } catch (error) {
+      console.error('[handleFormSubmit] Error:', {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+
+      toast({
+        title: t('common.error', 'Error'),
+        description: error instanceof Error 
+          ? error.message 
+          : t('sales.orders.saveError', 'Failed to save order'),
+        variant: "destructive",
+      });
+    }
+  };
 
   const fetchOrders = async () => {
     try {
@@ -48,42 +186,10 @@ function OrdersPage() {
     } catch (error) {
       console.error("Error fetching orders:", error);
       toast({
-        title: "Error",
-        description: "Failed to fetch orders",
+        title: t('common.error', 'Error'),
+        description: t('sales.orders.fetchError', 'Failed to fetch orders'),
         variant: "destructive",
       });
-    }
-  };
-
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
-  const handleSetupAccounts = async () => {
-    try {
-      setIsSettingUpAccounts(true);
-      const response = await fetch('/api/finance/setup-accounts');
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to set up accounts');
-      }
-      
-      const result = await response.json();
-      
-      toast({
-        title: "Success",
-        description: result.message,
-      });
-    } catch (error) {
-      console.error('Error setting up accounts:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to set up accounts",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSettingUpAccounts(false);
     }
   };
 
@@ -99,186 +205,56 @@ function OrdersPage() {
       }
       
       toast({
-        title: "Success",
-        description: "Journal entry created successfully",
+        title: t('common.success', 'Success'),
+        description: t('sales.orders.journalEntrySuccess', 'Journal entry created successfully'),
       });
       
       fetchOrders();
     } catch (error) {
       console.error('Error creating journal entry:', error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create journal entry",
+        title: t('common.error', 'Error'),
+        description: error instanceof Error 
+          ? error.message 
+          : t('sales.orders.journalEntryError', 'Failed to create journal entry'),
         variant: "destructive",
       });
     }
   };
 
-  const columns: ColumnDef<OrderWithCustomer>[] = [
-    {
-      accessorKey: "orderNo",
-      header: "Order No",
-    },
-    {
-      accessorKey: "customer.name",
-      header: "Customer",
-    },
-    {
-      accessorKey: "totalAmount",
-      header: "Total",
-      cell: ({ row }) => {
-        const amount = parseFloat(row.getValue("totalAmount"));
-        const formatted = new Intl.NumberFormat("id-ID", {
-          style: "currency",
-          currency: "IDR",
-        }).format(amount);
-        return formatted;
-      },
-    },
-    {
-      accessorKey: "status",
-      header: "Status",
-      cell: ({ row }) => {
-        const status = row.getValue("status") as string;
-        return (
-          <Badge
-            variant={
-              status === "completed"
-                ? "success"
-                : status === "cancelled"
-                ? "destructive"
-                : "default"
-            }
-          >
-            {status || "pending"}
-          </Badge>
-        );
-      },
-    },
-    {
-      accessorKey: "createdAt",
-      header: "Created At",
-      cell: ({ row }) => format(new Date(row.getValue("createdAt")), "dd/MM/yyyy"),
-    },
-    {
-      id: "actions",
-      cell: ({ row }) => {
-        const order = row.original;
-
-        const handleDelete = async () => {
-          try {
-            const response = await fetch(`/api/sales/orders/${order.id}`, {
-              method: 'DELETE',
-            });
-            
-            if (!response.ok) {
-              const error = await response.json();
-              throw new Error(error.message || 'Failed to delete order');
-            }
-            
-            toast({
-              title: "Success",
-              description: "Order deleted successfully",
-            });
-            
-            fetchOrders();
-          } catch (error) {
-            console.error('Error deleting order:', error);
-            toast({
-              title: "Error",
-              description: error instanceof Error ? error.message : "Failed to delete order",
-              variant: "destructive",
-            });
-          }
-        };
-
-        return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <span className="sr-only">Open menu</span>
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => {
-                  setSelectedOrder(order);
-                  setShowForm(true);
-                }}
-              >
-                Edit
-              </DropdownMenuItem>
-              {!order.journalEntryId && (
-                <DropdownMenuItem
-                  onClick={() => handleCreateJournalEntry(order.id)}
-                >
-                  Create Journal Entry
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem
-                onClick={handleDelete}
-                className="text-destructive"
-              >
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        );
-      },
-    },
-  ];
+  // Return a loading placeholder while mounting to avoid hydration issues
+  if (!mounted) {
+    return <div className="container mx-auto py-10">{t('common.loading', 'Loading...')}</div>;
+  }
 
   return (
-    <div className="container mx-auto py-4 px-2 sm:px-4 sm:py-6 lg:px-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-        <h1 className="text-xl sm:text-2xl font-bold">Orders</h1>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={handleSetupAccounts}
-            disabled={isSettingUpAccounts}
-          >
-            {isSettingUpAccounts ? (
-              <>
-                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent"></span>
-                Setting up...
-              </>
-            ) : (
-              'Setup Accounts'
-            )}
-          </Button>
-          <Button asChild>
-            <Link href="/sales/orders/new">
-              <Plus className="h-4 w-4 mr-2" />
-              New Order
-            </Link>
-          </Button>
-        </div>
+    <div className="container mx-auto py-10">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-2xl font-bold">{t('sales.orders.title', 'Order Management')}</h1>
+        <Button onClick={handleNewOrder}>
+          <Plus className="mr-2 h-4 w-4" />
+          {t('sales.orders.addNew', 'Add New Order')}
+        </Button>
       </div>
 
-      <Dialog 
-        open={showForm} 
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedOrder(null);
-          }
-          setShowForm(open);
-        }}
-      >
+      <DataTable 
+        columns={columns}
+        data={orders} 
+      />
+
+      <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>
-              {selectedOrder ? "Edit Order" : "Create New Order"}
+              {selectedOrder 
+                ? t('sales.orders.editOrder', 'Edit Order') 
+                : t('sales.orders.newOrder', 'New Order')}
             </DialogTitle>
           </DialogHeader>
           <OrderForm
-            initialData={selectedOrder}
-            onSuccess={() => {
-              setShowForm(false);
-              setSelectedOrder(null);
-              fetchOrders();
-            }}
+            key={selectedOrder?.id || 'new'} // Force re-render when switching between new/edit
+            initialData={selectedOrder || undefined}
+            onSubmit={handleFormSubmit}
             onCancel={() => {
               setShowForm(false);
               setSelectedOrder(null);
@@ -287,15 +263,25 @@ function OrdersPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="rounded-lg border bg-card">
-        <DataTable
-          columns={columns}
-          data={orders}
-          searchKey="orderNo"
-        />
-      </div>
+      <OrderViewDialog
+        order={viewingOrder}
+        open={showViewDialog}
+        onOpenChange={setShowViewDialog}
+        t={t}
+      />
     </div>
   );
 }
 
-export default withPermission(OrdersPage, "sales.orders", "read"); 
+// Wrap the exported component with I18nProvider
+export default withPermission(
+  function WrappedOrdersPage(props: any) {
+    return (
+      <I18nProvider>
+        <OrdersPage {...props} />
+      </I18nProvider>
+    );
+  },
+  "sales",
+  "read"
+); 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +15,8 @@ import { toast } from "@/components/ui/use-toast";
 import { Stock } from "@prisma/client";
 import { ClipboardCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
 
 interface InspectStockButtonProps {
   stock: Stock;
@@ -26,6 +28,12 @@ export function InspectStockButton({ stock, disabled }: InspectStockButtonProps)
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState("");
   const router = useRouter();
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleInspect = async () => {
     try {
@@ -44,12 +52,12 @@ export function InspectStockButton({ stock, disabled }: InspectStockButtonProps)
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to inspect stock");
+        throw new Error(data.error || t('inventory.inspection.stockInspectError', 'Failed to inspect stock'));
       }
 
       toast({
-        title: "Stock Inspected",
-        description: `Successfully inspected ${stock.jumboRollNo}`,
+        title: t('inventory.inspection.stockInspectedTitle', 'Stock Inspected'),
+        description: t('inventory.inspection.stockInspectedDescription', 'Successfully inspected {{rollNo}}', { rollNo: stock.jumboRollNo }),
       });
 
       setOpen(false);
@@ -57,14 +65,23 @@ export function InspectStockButton({ stock, disabled }: InspectStockButtonProps)
     } catch (error) {
       console.error("Error inspecting stock:", error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to inspect stock",
+        title: t('common.error', 'Error'),
+        description: error instanceof Error ? error.message : t('inventory.inspection.stockInspectError', 'Failed to inspect stock'),
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   };
+
+  if (!mounted) {
+    return (
+      <Button variant="outline" size="sm" disabled={true}>
+        <ClipboardCheck className="h-4 w-4 mr-2" />
+        {t('common.loading', 'Loading...')}
+      </Button>
+    );
+  }
 
   return (
     <>
@@ -75,23 +92,22 @@ export function InspectStockButton({ stock, disabled }: InspectStockButtonProps)
         disabled={disabled || stock.inspected}
       >
         <ClipboardCheck className="h-4 w-4 mr-2" />
-        {stock.inspected ? "Inspected" : "Inspect"}
+        {stock.inspected ? t('inventory.inspection.inspected', 'Inspected') : t('inventory.inspection.inspect', 'Inspect')}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Inspect Stock</DialogTitle>
+            <DialogTitle>{t('inventory.inspection.inspectStock', 'Inspect Stock')}</DialogTitle>
             <DialogDescription>
-              You are about to inspect {stock.jumboRollNo}. 
-              This action cannot be undone.
+              {t('inventory.inspection.inspectStockDescription', 'You are about to inspect {{rollNo}}. This action cannot be undone.', { rollNo: stock.jumboRollNo })}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Textarea
-                placeholder="Add inspection notes (optional)"
+                placeholder={t('inventory.inspection.notePlaceholder', 'Add inspection notes (optional)')}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
@@ -104,13 +120,13 @@ export function InspectStockButton({ stock, disabled }: InspectStockButtonProps)
               onClick={() => setOpen(false)}
               disabled={loading}
             >
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={handleInspect}
               disabled={loading}
             >
-              {loading ? "Inspecting..." : "Confirm Inspection"}
+              {loading ? t('inventory.inspection.inspecting', 'Inspecting...') : t('inventory.inspection.confirmInspection', 'Confirm Inspection')}
             </Button>
           </DialogFooter>
         </DialogContent>

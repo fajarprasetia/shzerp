@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "./avatar";
 import { Button } from "./button";
 import {
@@ -11,10 +11,16 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "./dropdown-menu";
-import { Menu, Moon, Sun, User, LogOut, Settings, Bell } from "lucide-react";
+import { Menu, Moon, Sun, User, LogOut, Settings, Bell, Languages } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useTheme } from "@/providers/theme-provider";
+import { useTheme } from "@/app/providers";
 import { format } from "date-fns";
+import { signOutAction } from "@/app/actions/auth-actions";
+import { useToast } from "./use-toast";
+import { useLanguage } from "@/app/providers";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
+import { withI18nLoader } from '@/components/i18n-loader';
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -32,12 +38,17 @@ function getPageTitle(pathname: string): string {
   return title;
 }
 
-export function Header({ onMenuClick }: HeaderProps) {
+function HeaderComponent({ onMenuClick }: HeaderProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { toast } = useToast();
   const [mounted, setMounted] = React.useState(false);
   const { theme, setTheme } = useTheme();
+  const { language, setLanguage } = useLanguage();
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
   const [time, setTime] = React.useState<string>("");
   const [date, setDate] = React.useState<string>("");
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   
   // Initialize notifications with empty array to avoid errors
   const notifications: { id: string; title: string; message: string; read: boolean; createdAt: string }[] = [];
@@ -61,6 +72,45 @@ export function Header({ onMenuClick }: HeaderProps) {
     
     return () => clearInterval(interval);
   }, []);
+
+  const handleProfileClick = () => {
+    router.push("/profile");
+  };
+
+  const handleSettingsClick = () => {
+    router.push("/settings");
+  };
+
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+      const result = await signOutAction();
+      
+      if (result.success) {
+        toast({
+          title: t('common.loggedOut', 'Logged out'),
+          description: t('common.loggedOutDesc', 'You have been successfully logged out'),
+        });
+        // Redirect to login page
+        window.location.href = "/auth/login";
+      } else {
+        toast({
+          title: t('common.error', 'Error'),
+          description: result.error || t('common.logoutError', 'Failed to log out'),
+          variant: "destructive",
+        });
+        setIsLoggingOut(false);
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('common.unexpectedError', 'An unexpected error occurred'),
+        variant: "destructive",
+      });
+      setIsLoggingOut(false);
+    }
+  };
 
   if (!mounted) return null;
 
@@ -111,6 +161,51 @@ export function Header({ onMenuClick }: HeaderProps) {
           </h1>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
+          {/* Language Switcher */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "relative rounded-full",
+                  theme === "light" 
+                    ? "hover:bg-gray-100/50 text-gray-600 hover:text-gray-900"
+                    : "hover:bg-gray-800/50 text-gray-300 hover:text-gray-50"
+                )}
+                title={t('common.language')}
+              >
+                <Languages className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem 
+                className={cn(
+                  "cursor-pointer",
+                  language === "en" && "font-bold",
+                  theme === "light" 
+                    ? "hover:bg-gray-100/50 text-gray-600 hover:text-gray-900"
+                    : "hover:bg-gray-800/50 text-gray-300 hover:text-gray-50"
+                )}
+                onClick={() => setLanguage("en")}
+              >
+                🇺🇸 {t('common.english')}
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                className={cn(
+                  "cursor-pointer",
+                  language === "zh" && "font-bold",
+                  theme === "light" 
+                    ? "hover:bg-gray-100/50 text-gray-600 hover:text-gray-900"
+                    : "hover:bg-gray-800/50 text-gray-300 hover:text-gray-50"
+                )}
+                onClick={() => setLanguage("zh")}
+              >
+                🇨🇳 {t('common.chinese')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -138,7 +233,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-80">
               <div className="flex items-center justify-between px-2 py-1.5">
-                <h3 className="text-sm font-semibold">Notifications</h3>
+                <h3 className="text-sm font-semibold">{t('common.notifications')}</h3>
                 {unreadCount > 0 && (
                   <Button
                     variant="ghost"
@@ -146,7 +241,7 @@ export function Header({ onMenuClick }: HeaderProps) {
                     className="text-xs"
                     onClick={() => markAsRead(notifications.map(n => n.id))}
                   >
-                    Mark all as read
+                    {t('common.markAllAsRead', 'Mark all as read')}
                   </Button>
                 )}
               </div>
@@ -178,7 +273,7 @@ export function Header({ onMenuClick }: HeaderProps) {
                   ))
                 ) : (
                   <div className="py-3 px-2 text-sm text-muted-foreground text-center">
-                    No notifications
+                    {t('common.noNotifications')}
                   </div>
                 )}
               </div>
@@ -194,6 +289,7 @@ export function Header({ onMenuClick }: HeaderProps) {
                 : "hover:bg-gray-800/50 text-gray-300 hover:text-gray-50"
             )}
             onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            title={theme === "light" ? t('common.darkMode') : t('common.lightMode')}
           >
             {theme === "light" ? (
               <Moon className="h-5 w-5" />
@@ -222,33 +318,47 @@ export function Header({ onMenuClick }: HeaderProps) {
               align="end"
               className={theme === "light" ? "border-gray-200" : "border-gray-800"}
             >
-              <DropdownMenuItem className={cn(
-                "cursor-pointer",
-                theme === "light" 
-                  ? "hover:bg-gray-100/50 text-gray-600 hover:text-gray-900"
-                  : "hover:bg-gray-800/50 text-gray-300 hover:text-gray-50"
-              )}>
+              <DropdownMenuItem 
+                className={cn(
+                  "cursor-pointer",
+                  theme === "light" 
+                    ? "hover:bg-gray-100/50 text-gray-600 hover:text-gray-900"
+                    : "hover:bg-gray-800/50 text-gray-300 hover:text-gray-50"
+                )}
+                onClick={handleProfileClick}
+              >
                 <User className="mr-2 h-4 w-4" />
-                Profile
+                {t('common.profile')}
               </DropdownMenuItem>
-              <DropdownMenuItem className={cn(
-                "cursor-pointer",
-                theme === "light" 
-                  ? "hover:bg-gray-100/50 text-gray-600 hover:text-gray-900"
-                  : "hover:bg-gray-800/50 text-gray-300 hover:text-gray-50"
-              )}>
+              <DropdownMenuItem 
+                className={cn(
+                  "cursor-pointer",
+                  theme === "light" 
+                    ? "hover:bg-gray-100/50 text-gray-600 hover:text-gray-900"
+                    : "hover:bg-gray-800/50 text-gray-300 hover:text-gray-50"
+                )}
+                onClick={handleSettingsClick}
+              >
                 <Settings className="mr-2 h-4 w-4" />
-                Settings
+                {t('common.settings')}
               </DropdownMenuItem>
               <DropdownMenuSeparator className={theme === "light" ? "bg-gray-200" : "bg-gray-800"} />
-              <DropdownMenuItem className={cn(
-                "cursor-pointer",
-                theme === "light" 
-                  ? "hover:bg-red-50 text-red-600 hover:text-red-700"
-                  : "hover:bg-red-950/50 text-red-400 hover:text-red-300"
-              )}>
-                <LogOut className="mr-2 h-4 w-4" />
-                Log out
+              <DropdownMenuItem 
+                className={cn(
+                  "cursor-pointer",
+                  theme === "light" 
+                    ? "hover:bg-red-50 text-red-600 hover:text-red-700"
+                    : "hover:bg-red-950/50 text-red-400 hover:text-red-300"
+                )}
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+              >
+                {isLoggingOut ? (
+                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent"></div>
+                ) : (
+                  <LogOut className="mr-2 h-4 w-4" />
+                )}
+                {isLoggingOut ? t('common.loggingOut') : t('common.logout')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -256,4 +366,7 @@ export function Header({ onMenuClick }: HeaderProps) {
       </div>
     </header>
   );
-} 
+}
+
+// Export the header component wrapped with the withI18nLoader HOC
+export const Header = withI18nLoader(HeaderComponent); 

@@ -40,6 +40,8 @@ model User {
   financeNotifications FinanceNotification[]
   payments             Payment[]
   vendorPayments       VendorPayment[]
+  taxFilings          TaxFiling[]
+  shipments            Shipment[]
 
   @@map("users")
 }
@@ -100,12 +102,17 @@ model Stock {
   inspected       Boolean         @default(false)
   inspectedById   String?
   inspectedAt     DateTime?
+  isSold          Boolean         @default(false)
+  orderNo         String?
+  soldDate        DateTime?
+  customerName    String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   inspectedBy     User?           @relation("InspectedBy", fields: [inspectedById], references: [id])
   divided         Divided[]
   inspectionLogs  InspectionLog[] @relation("StockInspection")
   orderItems      OrderItem[]
+  shipmentItems   ShipmentItem[]
 }
 
 model Divided {
@@ -114,18 +121,24 @@ model Divided {
   barcodeId      String          @unique
   width          Float
   length         Float
+  remainingLength Float
   weight         Float?
   note           String?
   inspected      Boolean         @default(false)
   inspectedById  String?
   inspectedAt    DateTime?
+  isSold         Boolean         @default(false)
+  orderNo        String?
+  soldDate       DateTime?
+  customerName   String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-  stock          Stock           @relation(fields: [stockId], references: [id])
   stockId        String
+  stock          Stock           @relation(fields: [stockId], references: [id])
   inspectedBy    User?           @relation("DividedInspectedBy", fields: [inspectedById], references: [id])
   inspectionLogs InspectionLog[] @relation("DividedInspection")
   orderItems     OrderItem[]
+  shipmentItems  ShipmentItem[]
 
   @@map("divided")
 }
@@ -157,6 +170,8 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   orders    Order[]
+  invoices  Invoice[]
+  accountsReceivable AccountsReceivable[]
 
   @@map("customers")
 }
@@ -169,32 +184,42 @@ model Order {
   totalAmount Float       @default(0)
   orderItems  OrderItem[]
   note        String?
+  status      String      @default("PENDING") // PENDING, SHIPPED, CANCELLED
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   payments    Payment[]
+  shipment    Shipment?
+  invoices    Invoice[]
+  
+  // Add payment related fields
+  paymentStatus String?   // PAID, PENDING
+  paymentImage  String?
+  paymentMethod String?
+  reference     String?
 
   @@map("orders")
 }
 
 model OrderItem {
-  id        String   @id @default(cuid())
-  orderId   String
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  type      String
-  product   String?
-  gsm       String?
-  width     String?
-  length    String?
-  weight    String?
-  quantity  Int      @default(1)
-  price     Float
-  tax       Float    @default(0)
-  stockId   String?
-  stock     Stock?   @relation(fields: [stockId], references: [id])
-  dividedId String?
-  divided   Divided? @relation(fields: [dividedId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String         @id @default(cuid())
+  orderId       String
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type          String
+  product       String?
+  gsm           String?
+  width         String?
+  length        String?
+  weight        String?
+  quantity      Int            @default(1)
+  price         Float
+  tax           Float          @default(0)
+  stockId       String?
+  stock         Stock?         @relation(fields: [stockId], references: [id])
+  dividedId     String?
+  divided       Divided?       @relation(fields: [dividedId], references: [id])
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  shipmentItems ShipmentItem[]
 
   @@map("order_items")
 }
@@ -475,4 +500,142 @@ model Permission {
 
   @@unique([roleId, resource, action])
   @@map("permissions")
+}
+
+// Bank Account Model
+model BankAccount {
+  id            String    @id @default(cuid())
+  accountName   String
+  accountNumber String
+  bankName      String
+  balance       Float     @default(0)
+  currency      String    @default("IDR")
+  status        String    @default("active")
+  description   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("bank_accounts")
+}
+
+// Tax Settings model
+model TaxSetting {
+  id        String   @id @default(cuid())
+  taxType   String   // e.g., "PPN", "PPh 21", etc.
+  key       String   // Setting key, e.g., "rate", "ptkp_tk0", etc.
+  value     String   // Setting value, stored as string (can be parsed as needed)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([taxType, key])
+}
+
+// Tax Filing model
+model TaxFiling {
+  id            String          @id @default(cuid())
+  taxType       String          // e.g., "PPN", "PPh 21", etc.
+  taxPeriod     String          // e.g., "January 2023", "Q1 2023", etc.
+  dueDate       DateTime
+  amount        Float
+  status        String          // "pending", "filed", "overdue"
+  notes         String?
+  receiptNumber String?
+  filingDate    DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  userId        String
+  user          User            @relation(fields: [userId], references: [id])
+  attachments   TaxAttachment[]
+}
+
+// Tax Attachment model
+model TaxAttachment {
+  id          String    @id @default(cuid())
+  fileName    String
+  fileUrl     String
+  fileType    String
+  fileSize    Int
+  uploadedAt  DateTime  @default(now())
+  taxFilingId String
+  taxFiling   TaxFiling @relation(fields: [taxFilingId], references: [id], onDelete: Cascade)
+}
+
+// Shipment Models
+model Shipment {
+  id            String          @id @default(cuid())
+  orderId       String          @unique
+  order         Order           @relation(fields: [orderId], references: [id])
+  shipmentDate  DateTime
+  shippedBy     String
+  shippedByUser User            @relation(fields: [shippedBy], references: [id])
+  notes         String?
+  shipmentItems ShipmentItem[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@map("shipments")
+}
+
+model ShipmentItem {
+  id            String    @id @default(cuid())
+  shipmentId    String
+  shipment      Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  orderItemId   String
+  orderItem     OrderItem @relation(fields: [orderItemId], references: [id])
+  scannedBarcode String?
+  stockId       String?
+  stock         Stock?    @relation(fields: [stockId], references: [id])
+  dividedId     String?
+  divided       Divided?  @relation(fields: [dividedId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("shipment_items")
+}
+
+// Add the Invoice model for tracking payment status
+model Invoice {
+  id            String      @id @default(cuid())
+  invoiceNo     String      @unique
+  orderId       String
+  order         Order       @relation(fields: [orderId], references: [id])
+  customerId    String
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  customerName  String
+  customerAddress String
+  totalAmount   Float
+  paymentStatus String      @default("PENDING") // PENDING or PAID
+  paymentDate   DateTime?
+  paymentImage  String?
+  paymentMethod String?
+  reference     String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  // For accounts receivable integration
+  accountsReceivableId String?
+  accountsReceivable AccountsReceivable? @relation(fields: [accountsReceivableId], references: [id])
+
+  @@index([orderId])
+  @@index([customerId])
+  @@index([paymentStatus])
+}
+
+// Model for tracking accounts receivable
+model AccountsReceivable {
+  id            String      @id @default(cuid())
+  customerId    String
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  totalAmount   Float
+  paidAmount    Float       @default(0)
+  status        String      @default("OPEN") // OPEN, CLOSED, OVERDUE
+  dueDate       DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  // Relation to invoices
+  invoices      Invoice[]
+  
+  @@index([customerId])
+  @@index([status])
 }

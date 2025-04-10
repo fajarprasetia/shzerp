@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useDividedData } from "@/hooks/use-divided-data";
 import { DataTable } from "@/components/ui/data-table";
@@ -18,10 +18,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AddDividedStockDialog } from "../components/add-divided-stock-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useTranslation } from "react-i18next";
+// Import pre-initialized i18n instance
+import i18nInstance from "@/app/i18n";
 
-interface DividedWithStock extends Divided {
-  stock: Stock;
-  inspectedBy: {
+// Update the interface to match what the API actually returns
+interface DividedWithSoldInfo extends Divided {
+  stock?: Stock;
+  stockId: string;  
+  inspectedBy?: {
     name: string;
   } | null;
   containerNo?: string;
@@ -29,23 +35,63 @@ interface DividedWithStock extends Divided {
   inspector?: {
     name: string;
   } | null;
+  // These fields are for sold items
+  isSold: boolean;
+  orderNo?: string;
+  soldDate?: Date;
+  customerName?: string;
+  orderItemId?: string;
 }
 
 export default function DividedPage() {
   const { data: dividedData, mutate: mutateDivided } = useDividedData();
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState("available");
   const { toast } = useToast();
+  // Use the pre-initialized i18n instance
+  const { t, i18n } = useTranslation(undefined, { i18n: i18nInstance });
+  const [mounted, setMounted] = useState(false);
+
+  // Effect to handle mounting and debug i18n state
+  useEffect(() => {
+    setMounted(true);
+    
+    // Log i18n state for debugging
+    console.log('Divided page i18n state:', {
+      language: i18n?.language,
+      isInitialized: i18n?.isInitialized,
+      availableLanguages: i18n?.languages || ['en', 'zh']
+    });
+  }, [i18n]);
+
+  // Add initial sorting state to sort by rollNo by default
+  const initialSorting = [
+    {
+      id: "rollNo",
+      desc: false,
+    },
+  ];
+
+  // Filter divided stock data based on active tab
+  const filteredData = dividedData?.filter((divided) => {
+    if (activeTab === "available") {
+      return !divided.isSold;
+    } else if (activeTab === "sold") {
+      return divided.isSold;
+    }
+    return true;
+  });
 
   const handleDeleteSelected = async () => {
     if (!selectedRows.length) return;
 
-    if (!confirm("Are you sure you want to delete the selected items?")) return;
+    if (!confirm(t('inventory.divided.confirmDelete', 'Are you sure you want to delete the selected items?'))) return;
 
     setIsDeleting(true);
     try {
-      const response = await fetch("/api/inventory/divided/batch", {
-        method: "DELETE",
+      const response = await fetch("/api/inventory/divided/bulk-delete", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: selectedRows }),
       });
@@ -57,14 +103,14 @@ export default function DividedPage() {
       mutateDivided();
       setSelectedRows([]);
       toast({
-        title: "Success",
-        description: "Selected items deleted successfully",
+        title: t('common.success', 'Success'),
+        description: t('inventory.divided.deleteSuccess', '{{count}} items deleted successfully.', { count: selectedRows.length }),
       });
     } catch (error) {
       console.error("Error deleting items:", error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to delete items",
+        title: t('common.error', 'Error'),
+        description: t('inventory.divided.deleteError', 'Failed to delete items. Please try again.'),
         variant: "destructive",
       });
     } finally {
@@ -87,36 +133,39 @@ export default function DividedPage() {
         doc.addPage([7, 5], "landscape");
       }
 
-      // Create barcode
+      // Create barcode - make it larger and clearer
       const canvas = document.createElement("canvas");
       JsBarcode(canvas, item.rollNo, {
         format: "CODE128",
-        width: 2,
-        height: 30,
-        displayValue: false
+        width: 3,        // Increased bar width
+        height: 50,      // Increased bar height
+        displayValue: false, // Show the value
+        fontSize: 0,    // Larger font size
+        textMargin: 0,   // More space for text
+        margin: 0
       });
 
-      // Add content
-      doc.setFontSize(12);
-      if (item.stockId !== "current") {
-        doc.text(item.stock.type, 3.5, 1, { align: "center" });
-        doc.text(`${item.width} x ${item.length} x ${item.stock.gsm}g`, 3.5, 1.8, { align: "center" });
+      // Header text - slightly smaller to make room for larger barcode
+      doc.setFontSize(11);
+      if (item.stockId !== "current" && item.stock) {
+        doc.text(item.stock.type, 3.5, 0.7, { align: "center" });
+        doc.text(`${item.width} x ${item.length} x ${item.stock.gsm}g`, 3.5, 1.2, { align: "center" });
       } else {
-        doc.text(`${item.width} x ${item.length}`, 3.5, 1.8, { align: "center" });
+        doc.text(`${item.width} x ${item.length}`, 3.5, 1.0, { align: "center" });
       }
       
-      // Add barcode
-      doc.addImage(canvas.toDataURL(), "PNG", 1, 2, 5, 1.5);
+      // Add larger barcode and position it more centrally
+      doc.addImage(canvas.toDataURL(), "PNG", 0.5, 1.6, 6, 2);
       
-      // Add roll number
+      // Add roll number below barcode if needed
       doc.setFontSize(10);
-      doc.text(item.rollNo, 3.5, 4.5, { align: "center" });
+      doc.text(item.rollNo, 3.5, 4.3, { align: "center" });
     });
 
     doc.save("divided-labels.pdf");
   };
 
-  const columns: ColumnDef<DividedWithStock>[] = [
+  const columns: ColumnDef<DividedWithSoldInfo>[] = [
     {
       id: "select",
       header: ({ table }) => (
@@ -149,26 +198,36 @@ export default function DividedPage() {
     },
     {
       accessorKey: "rollNo",
-      header: "Roll No",
+      header: t('inventory.divided.rollNo', 'Roll No'),
+      sortingFn: "alphanumeric",
+      enableSorting: true,
     },
     {
       accessorKey: "type",
-      header: "Type",
-      cell: ({ row }) => row.original.stockId === "current" ? "Current" : row.original.stock.type,
+      header: t('inventory.divided.type', 'Type'),
+      sortingFn: "alphanumeric",
+      enableSorting: true,
+      cell: ({ row }) => row.original.stockId === "current" ? t('inventory.divided.current', 'Current') : row.original.stock?.type || '-',
     },
     {
       accessorKey: "gsm",
-      header: "GSM",
-      cell: ({ row }) => row.original.stockId === "current" ? "-" : row.original.stock.gsm,
+      header: t('inventory.divided.gsm', 'GSM'),
+      sortingFn: "basic",
+      enableSorting: true,
+      cell: ({ row }) => row.original.stockId === "current" ? "-" : row.original.stock?.gsm || '-',
     },
     {
       accessorKey: "containerNo",
-      header: "Container No",
+      header: t('inventory.divided.containerNo', 'Container No'),
+      sortingFn: "alphanumeric",
+      enableSorting: true,
       cell: ({ row }) => row.original.containerNo || row.original.stock?.containerNo || "-",
     },
     {
       accessorKey: "arrivalDate",
-      header: "Arrival Date",
+      header: t('inventory.divided.arrivalDate', 'Arrival Date'),
+      sortingFn: "datetime",
+      enableSorting: true,
       cell: ({ row }) => {
         const date = row.original.arrivalDate || row.original.stock?.arrivalDate;
         return date ? format(new Date(date), "dd/MM/yyyy") : "-";
@@ -176,31 +235,58 @@ export default function DividedPage() {
     },
     {
       accessorKey: "width",
-      header: "Width",
+      header: t('inventory.divided.width', 'Width'),
+      sortingFn: "basic",
+      enableSorting: true,
       cell: ({ row }) => `${row.original.width}mm`,
     },
     {
       accessorKey: "length",
-      header: "Length",
+      header: t('inventory.divided.length', 'Length'),
+      sortingFn: "basic",
+      enableSorting: true,
       cell: ({ row }) => `${row.original.length}m`,
     },
     {
       accessorKey: "weight",
-      header: "Weight",
+      header: t('inventory.divided.weight', 'Weight'),
+      sortingFn: "basic",
+      enableSorting: true,
       cell: ({ row }) => row.original.weight ? `${row.original.weight}kg` : "-",
     },
     {
       accessorKey: "inspected",
-      header: "Inspected",
-      cell: ({ row }) => row.original.inspected ? "Yes" : "No",
+      header: t('inventory.divided.inspected', 'Inspected'),
+      sortingFn: "basic",
+      enableSorting: true,
+      cell: ({ row }) => row.original.inspected ? t('common.yes', 'Yes') : t('common.no', 'No'),
     },
     {
       accessorKey: "inspectedBy",
-      header: "Inspected by",
+      header: t('inventory.divided.inspectedBy', 'Inspected by'),
+      sortingFn: "alphanumeric",
+      enableSorting: true,
       cell: ({ row }) => row.original.inspector?.name || row.original.inspectedBy?.name || "-",
+    },
+    // Add order information for sold stock
+    {
+      accessorKey: "orderDetails",
+      header: t('inventory.divided.orderInfo', 'Order Info'),
+      enableSorting: false,
+      cell: ({ row }) => {
+        const divided = row.original;
+        return divided.isSold && divided.orderNo ? (
+          <div className="text-xs">
+            <div>{t('inventory.divided.order', 'Order')}: {divided.orderNo}</div>
+            <div>{t('inventory.divided.date', 'Date')}: {divided.soldDate ? format(new Date(divided.soldDate), "PPP") : "-"}</div>
+            <div>{t('inventory.divided.customer', 'Customer')}: {divided.customerName || "-"}</div>
+          </div>
+        ) : "-";
+      },
     },
     {
       id: "actions",
+      enableSorting: false,
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Button
@@ -220,7 +306,7 @@ export default function DividedPage() {
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 onClick={async () => {
-                  if (confirm("Are you sure you want to delete this item?")) {
+                  if (confirm(t('inventory.divided.confirmDeleteItem', 'Are you sure you want to delete this item?'))) {
                     try {
                       const response = await fetch(`/api/inventory/divided/${row.original.id}`, {
                         method: "DELETE",
@@ -230,21 +316,26 @@ export default function DividedPage() {
                       }
                       mutateDivided();
                       toast({
-                        title: "Success",
-                        description: "Item deleted successfully",
+                        title: t('common.success', 'Success'),
+                        description: t('inventory.divided.deleteItemSuccess', 'Item deleted successfully'),
                       });
                     } catch (error) {
                       console.error("Error deleting item:", error);
                       toast({
-                        title: "Error",
-                        description: "Failed to delete item",
+                        title: t('common.error', 'Error'),
+                        description: t('inventory.divided.deleteItemError', 'Failed to delete item'),
                         variant: "destructive",
                       });
                     }
                   }
                 }}
               >
-                Delete
+                {t('common.delete', 'Delete')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handlePrintLabel([row.original.id])}
+              >
+                {t('inventory.divided.printLabel', 'Print Label')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -253,44 +344,67 @@ export default function DividedPage() {
     },
   ];
 
+  // Return a loading placeholder while mounting to avoid hydration issues
+  if (!mounted) {
+    return <div>{t('common.loading', 'Loading...')}</div>;
+  }
+
   return (
-    <div className="container mx-auto py-4 px-2 sm:px-4 sm:py-6 lg:px-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-        <h1 className="text-xl sm:text-2xl font-bold">Divided Stock Management</h1>
-        <div className="flex flex-wrap gap-2">
-          <AddDividedStockDialog />
+    <div className="container mx-auto py-10">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">{t('inventory.divided.title', 'Divided Stock Management')}</h1>
+        <div className="flex items-center gap-2">
           {selectedRows.length > 0 && (
             <>
               <Button
-                variant="destructive"
-                onClick={handleDeleteSelected}
-                disabled={isDeleting}
-                className="whitespace-nowrap"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {isDeleting ? "Deleting..." : "Delete Selected"}
-              </Button>
-              <Button
                 variant="outline"
+                size="sm"
                 onClick={() => handlePrintLabel(selectedRows)}
-                className="whitespace-nowrap"
               >
                 <Printer className="h-4 w-4 mr-2" />
-                Print Labels
+                {t('inventory.divided.printLabels', 'Print Labels')}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteSelected}
+                disabled={isDeleting}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {t('inventory.divided.deleteSelected', 'Delete Selected')}
               </Button>
             </>
           )}
+          <AddDividedStockDialog />
         </div>
       </div>
 
-      <div className="rounded-lg border bg-card">
-        <DataTable
-          columns={columns}
-          data={dividedData || []}
-          searchKey="rollNo"
-          onRowSelectionChange={setSelectedRows}
-        />
-      </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-6">
+        <TabsList className="grid w-full grid-cols-2 mb-6">
+          <TabsTrigger value="available">{t('inventory.divided.availableStock', 'Available Stock')}</TabsTrigger>
+          <TabsTrigger value="sold">{t('inventory.divided.soldStock', 'Sold Stock')}</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="available" className="w-full">
+          <DataTable 
+            columns={columns} 
+            data={filteredData || []} 
+            enableSorting={true}
+            initialSorting={initialSorting}
+            searchKey="rollNo"
+          />
+        </TabsContent>
+        
+        <TabsContent value="sold" className="w-full">
+          <DataTable 
+            columns={columns} 
+            data={filteredData || []}
+            enableSorting={true}
+            initialSorting={initialSorting}
+            searchKey="rollNo"
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 } 

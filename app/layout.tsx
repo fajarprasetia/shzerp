@@ -1,17 +1,47 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/providers/theme-provider";
+import { ThemeProvider } from "@/app/providers";
 import { GlassLayout } from "./components/layout/glass-layout";
 import { Toaster } from "@/components/ui/toaster";
-import { SWRProvider } from "./providers/swr-provider";
-import { SessionProvider } from "./providers/session-provider";
+import { SWRProvider } from "@/app/providers";
+import { SessionProvider } from "@/app/providers";
+import { LanguageProvider } from "@/app/providers";
+import { I18nProvider } from "./app";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ERP System",
-  description: "Enterprise Resource Planning System",
+  title: "SHUNHUI ZHIYE INDONESIA",
+  description: "Enterprise Resource Planning System for SHUNHUI ZHIYE INDONESIA",
+  icons: {
+    icon: [
+      { url: "/favicon_io/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon_io/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon_io/favicon.ico", type: "image/x-icon" },
+    ],
+    apple: {
+      url: "/favicon_io/apple-touch-icon.png",
+      sizes: "180x180",
+      type: "image/png",
+    },
+    other: [
+      {
+        rel: "manifest",
+        url: "/favicon_io/site.webmanifest",
+      },
+      {
+        url: "/favicon_io/android-chrome-192x192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+      {
+        url: "/favicon_io/android-chrome-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({
@@ -23,14 +53,16 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider
-          attribute="class"
           defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
+          storageKey="ui-theme"
         >
           <SessionProvider>
             <SWRProvider>
-              {children}
+              <LanguageProvider>
+                <I18nProvider>
+                  {children}
+                </I18nProvider>
+              </LanguageProvider>
             </SWRProvider>
           </SessionProvider>
         </ThemeProvider>

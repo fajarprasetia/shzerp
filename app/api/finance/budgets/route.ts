@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyBudgetThreshold } from "@/lib/notifications";
 import { startOfMonth, endOfMonth } from "date-fns";
-import { auth } from "@/lib/auth";
+import { auth } from "@/auth";
 
 export async function GET(req: Request) {
   try {
@@ -12,11 +12,12 @@ export async function GET(req: Request) {
     }
 
     const budgets = await prisma.budget.findMany({
-      where: {
-        userId: session.user.id
-      },
       orderBy: {
         createdAt: 'desc'
+      },
+      include: {
+        fiscalYear: true,
+        items: true
       }
     });
 
@@ -35,22 +36,24 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { name, category, amount, startDate, endDate, description } = body;
+    const { name, fiscalYearId, description, items } = body;
 
-    if (!name || !category || !amount || !startDate || !endDate) {
+    if (!name || !fiscalYearId) {
       return new NextResponse("Missing required fields", { status: 400 });
     }
 
     const budget = await prisma.budget.create({
       data: {
         name,
-        category,
-        amount,
-        spent: 0,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        fiscalYearId,
         description,
-        userId: session.user.id
+        items: {
+          create: items || []
+        }
+      },
+      include: {
+        fiscalYear: true,
+        items: true
       }
     });
 
@@ -73,41 +76,50 @@ export async function PUT(request: Request) {
       );
     }
 
-    const budget = await prisma.budget.update({
+    // Check if budget exists
+    const existingBudget = await prisma.budget.findUnique({
       where: { id },
-      data: updates,
+      include: { items: true }
     });
 
-    // Check current spending against updated budget
-    const now = new Date();
-    const currentMonthStart = startOfMonth(now);
-    const currentMonthEnd = endOfMonth(now);
-
-    const spent = await prisma.transaction.aggregate({
-      where: {
-        userId: budget.userId,
-        category: budget.category,
-        type: "expense",
-        date: {
-          gte: currentMonthStart,
-          lte: currentMonthEnd,
-        },
-      },
-      _sum: {
-        amount: true,
-      },
-    });
-
-    const spentAmount = spent._sum.amount || 0;
-    if (spentAmount >= budget.amount * budget.alertThreshold) {
-      await notifyBudgetThreshold(
-        budget.userId,
-        budget.name,
-        budget.category,
-        spentAmount,
-        budget.amount
+    if (!existingBudget) {
+      return NextResponse.json(
+        { error: "Budget not found" },
+        { status: 404 }
       );
     }
+
+    // Handle budget item updates if provided
+    let updateData: any = { ...updates };
+    if (updates.items) {
+      // If items are provided, handle them separately
+      delete updateData.items;
+      
+      // First delete existing items
+      await prisma.budgetItem.deleteMany({
+        where: { budgetId: id }
+      });
+      
+      // Then create new items
+      if (Array.isArray(updates.items) && updates.items.length > 0) {
+        await prisma.budgetItem.createMany({
+          data: updates.items.map((item: any) => ({
+            ...item,
+            budgetId: id
+          }))
+        });
+      }
+    }
+
+    // Update the budget
+    const budget = await prisma.budget.update({
+      where: { id },
+      data: updateData,
+      include: {
+        fiscalYear: true,
+        items: true
+      }
+    });
 
     return NextResponse.json(budget);
   } catch (error) {

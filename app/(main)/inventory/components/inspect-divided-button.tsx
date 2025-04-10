@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +15,8 @@ import { toast } from "@/components/ui/use-toast";
 import { Divided } from "@prisma/client";
 import { ClipboardCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
 
 interface InspectDividedButtonProps {
   divided: Divided;
@@ -26,6 +28,12 @@ export function InspectDividedButton({ divided, disabled }: InspectDividedButton
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState("");
   const router = useRouter();
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleInspect = async () => {
     try {
@@ -44,12 +52,12 @@ export function InspectDividedButton({ divided, disabled }: InspectDividedButton
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to inspect divided stock");
+        throw new Error(data.error || t('inventory.inspection.dividedInspectError', 'Failed to inspect divided stock'));
       }
 
       toast({
-        title: "Stock Inspected",
-        description: `Successfully inspected ${divided.rollNo}`,
+        title: t('inventory.inspection.dividedInspectedTitle', 'Divided Stock Inspected'),
+        description: t('inventory.inspection.dividedInspectedDescription', 'Successfully inspected {{rollNo}}', { rollNo: divided.rollNo }),
       });
 
       setOpen(false);
@@ -57,14 +65,23 @@ export function InspectDividedButton({ divided, disabled }: InspectDividedButton
     } catch (error) {
       console.error("Error inspecting divided stock:", error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to inspect divided stock",
+        title: t('common.error', 'Error'),
+        description: error instanceof Error ? error.message : t('inventory.inspection.dividedInspectError', 'Failed to inspect divided stock'),
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   };
+
+  if (!mounted) {
+    return (
+      <Button variant="outline" size="sm" disabled={true}>
+        <ClipboardCheck className="h-4 w-4 mr-2" />
+        {t('common.loading', 'Loading...')}
+      </Button>
+    );
+  }
 
   return (
     <>
@@ -75,23 +92,22 @@ export function InspectDividedButton({ divided, disabled }: InspectDividedButton
         disabled={disabled || divided.inspected}
       >
         <ClipboardCheck className="h-4 w-4 mr-2" />
-        {divided.inspected ? "Inspected" : "Inspect"}
+        {divided.inspected ? t('inventory.inspection.inspected', 'Inspected') : t('inventory.inspection.inspect', 'Inspect')}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Inspect Divided Stock</DialogTitle>
+            <DialogTitle>{t('inventory.inspection.inspectDivided', 'Inspect Divided Stock')}</DialogTitle>
             <DialogDescription>
-              You are about to inspect {divided.rollNo}. 
-              This action cannot be undone.
+              {t('inventory.inspection.inspectDividedDescription', 'You are about to inspect divided roll {{rollNo}}. This action cannot be undone.', { rollNo: divided.rollNo })}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Textarea
-                placeholder="Add inspection notes (optional)"
+                placeholder={t('inventory.inspection.notePlaceholder', 'Add inspection notes (optional)')}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
@@ -104,13 +120,13 @@ export function InspectDividedButton({ divided, disabled }: InspectDividedButton
               onClick={() => setOpen(false)}
               disabled={loading}
             >
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={handleInspect}
               disabled={loading}
             >
-              {loading ? "Inspecting..." : "Confirm Inspection"}
+              {loading ? t('inventory.inspection.inspecting', 'Inspecting...') : t('inventory.inspection.confirmInspection', 'Confirm Inspection')}
             </Button>
           </DialogFooter>
         </DialogContent>

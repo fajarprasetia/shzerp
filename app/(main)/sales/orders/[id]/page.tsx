@@ -2,7 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { OrderForm } from "../components/order-form";
 import { notFound } from "next/navigation";
 
-export default async function EditOrderPage({ params }: { params: { id: string } }) {
+interface OrderPageParams {
+  id: string;
+}
+
+export default async function EditOrderPage({ params }: { params: OrderPageParams }) {
   const [order, customers, stocks, dividedStocks] = await Promise.all([
     prisma.order.findUnique({
       where: { id: params.id },

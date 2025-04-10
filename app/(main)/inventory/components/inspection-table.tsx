@@ -12,6 +12,9 @@ import { Stock, Divided } from "@prisma/client";
 import { InspectStockButton } from "./inspect-stock-button";
 import { InspectDividedButton } from "./inspect-divided-button";
 import { format } from "date-fns";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
+import { useState, useEffect } from "react";
 
 interface InspectionTableProps {
   stocks: Stock[];
@@ -19,20 +22,37 @@ interface InspectionTableProps {
 }
 
 export function InspectionTable({ stocks, divided }: InspectionTableProps) {
+  // Use the pre-initialized i18n instance
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Return a loading placeholder while mounting to avoid hydration issues
+  if (!mounted) {
+    return (
+      <div className="rounded-md border p-4 text-center">
+        {t('common.loading', 'Loading...')}
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-md border">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>ID Number</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>GSM</TableHead>
-            <TableHead>Width</TableHead>
-            <TableHead>Length</TableHead>
-            <TableHead>Weight</TableHead>
-            <TableHead>Container No</TableHead>
-            <TableHead>Arrival Date</TableHead>
-            <TableHead>Actions</TableHead>
+            <TableHead>{t('inventory.inspection.idNumber', 'ID Number')}</TableHead>
+            <TableHead>{t('inventory.stock.type', 'Type')}</TableHead>
+            <TableHead>{t('inventory.stock.gsm', 'GSM')}</TableHead>
+            <TableHead>{t('inventory.stock.width', 'Width')}</TableHead>
+            <TableHead>{t('inventory.stock.length', 'Length')}</TableHead>
+            <TableHead>{t('inventory.stock.weight', 'Weight')}</TableHead>
+            <TableHead>{t('inventory.stock.containerNo', 'Container No')}</TableHead>
+            <TableHead>{t('inventory.stock.arrivalDate', 'Arrival Date')}</TableHead>
+            <TableHead>{t('common.actions', 'Actions')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -56,7 +76,7 @@ export function InspectionTable({ stocks, divided }: InspectionTableProps) {
           {divided.map((item) => (
             <TableRow key={item.id}>
               <TableCell>{item.rollNo}</TableCell>
-              <TableCell>{item.stockId === "current" ? "Current" : "Divided Roll"}</TableCell>
+              <TableCell>{item.stockId === "current" ? t('inventory.divided.current', 'Current') : t('inventory.divided.dividedRoll', 'Divided Roll')}</TableCell>
               <TableCell>{item.stockId === "current" ? "-" : item.stock?.gsm || "-"}</TableCell>
               <TableCell>{item.width}</TableCell>
               <TableCell>{item.length}</TableCell>
@@ -71,7 +91,7 @@ export function InspectionTable({ stocks, divided }: InspectionTableProps) {
           {stocks.length === 0 && divided.length === 0 && (
             <TableRow>
               <TableCell colSpan={9} className="h-24 text-center">
-                No items to inspect
+                {t('inventory.inspection.noItemsToInspect', 'No items to inspect')}
               </TableCell>
             </TableRow>
           )}

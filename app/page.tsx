@@ -12,9 +12,9 @@ export default function HomePage() {
   useEffect(() => {
     if (!isLoading) {
       if (isAuthenticated) {
-        router.push('/dashboard');
+        window.location.replace('/dashboard');
       } else {
-        router.push('/auth/login');
+        window.location.replace('/auth/login');
       }
     }
   }, [isAuthenticated, isLoading, router]);
@@ -34,7 +34,7 @@ export default function HomePage() {
         A comprehensive enterprise resource planning solution for business operations.
       </p>
       <div className="flex gap-4">
-        <Button size="lg" onClick={() => router.push('/auth/login')}>
+        <Button size="lg" onClick={() => window.location.replace('/auth/login')}>
           Login
         </Button>
         <Button size="lg" variant="outline" onClick={() => window.open('https://github.com/yourusername/erp', '_blank')}>

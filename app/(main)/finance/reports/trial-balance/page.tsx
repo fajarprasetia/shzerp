@@ -5,7 +5,8 @@ import { format } from "date-fns";
 import { Calendar as CalendarIcon, FileText, FileSpreadsheet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
+import Calendar from 'react-calendar';
+import 'react-calendar/dist/Calendar.css';
 import {
   Popover,
   PopoverContent,
@@ -144,13 +145,23 @@ export default function TrialBalancePage() {
                 {date ? format(date, "PPP") : <span>Pick a date</span>}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={(newDate) => newDate && setDate(newDate)}
-                initialFocus
-              />
+            <PopoverContent className="w-auto p-0" align="start">
+              <div className="p-3">
+                <Calendar
+                  value={date}
+                  onChange={(value) => {
+                    if (value instanceof Date) {
+                      setDate(value);
+                    } else if (Array.isArray(value) && value[0] instanceof Date) {
+                      setDate(value[0]);
+                    }
+                  }}
+                  className="rounded-md border"
+                  maxDate={new Date()}
+                  minDetail="year"
+                  locale="en-US"
+                />
+              </div>
             </PopoverContent>
           </Popover>
 

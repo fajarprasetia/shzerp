@@ -5,6 +5,7 @@ import { formatCurrency } from "../utils/format-currency";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PermissionGate } from "@/app/components/permission-gate";
 import { TrendingUp, TrendingDown, Wallet, CreditCard, AlertCircle, DollarSign, ReceiptText } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface FinanceSummaryProps {
   totalRevenue: number;
@@ -25,13 +26,15 @@ export function FinanceSummary({
   accountsPayable,
   isLoading,
 }: FinanceSummaryProps) {
+  const { t } = useTranslation();
+  
   return (
     <PermissionGate resource="finance" action="read">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Total Revenue
+              {t('dashboard.finance.totalRevenue')}
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-emerald-500" />
           </CardHeader>
@@ -42,7 +45,7 @@ export function FinanceSummary({
               <div className="text-2xl font-bold">{formatCurrency(totalRevenue)}</div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              Income from sales and services
+              {t('dashboard.finance.incomeFromSales')}
             </p>
           </CardContent>
         </Card>
@@ -50,7 +53,7 @@ export function FinanceSummary({
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Total Expenses
+              {t('dashboard.finance.totalExpenses')}
             </CardTitle>
             <TrendingDown className="h-4 w-4 text-rose-500" />
           </CardHeader>
@@ -61,7 +64,7 @@ export function FinanceSummary({
               <div className="text-2xl font-bold">{formatCurrency(totalExpenses)}</div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              Costs and operational expenses
+              {t('dashboard.finance.costsAndExpenses')}
             </p>
           </CardContent>
         </Card>
@@ -69,7 +72,7 @@ export function FinanceSummary({
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Net Income
+              {t('dashboard.finance.netIncome')}
             </CardTitle>
             {netIncome >= 0 ? (
               <TrendingUp className="h-4 w-4 text-emerald-500" />
@@ -86,7 +89,7 @@ export function FinanceSummary({
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              Revenue minus expenses
+              {t('dashboard.finance.revenueLessExpenses')}
             </p>
           </CardContent>
         </Card>
@@ -94,7 +97,7 @@ export function FinanceSummary({
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Cash Balance
+              {t('dashboard.finance.cashBalance')}
             </CardTitle>
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -105,7 +108,7 @@ export function FinanceSummary({
               <div className="text-2xl font-bold">{formatCurrency(cashBalance)}</div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              Available funds in bank accounts
+              {t('dashboard.finance.availableFunds')}
             </p>
           </CardContent>
         </Card>
@@ -113,7 +116,7 @@ export function FinanceSummary({
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Accounts Receivable
+              {t('dashboard.finance.accountsReceivable')}
             </CardTitle>
             <ReceiptText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -124,7 +127,7 @@ export function FinanceSummary({
               <div className="text-2xl font-bold">{formatCurrency(accountsReceivable)}</div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              Money owed by customers
+              {t('dashboard.finance.moneyOwedByCustomers')}
             </p>
           </CardContent>
         </Card>
@@ -132,7 +135,7 @@ export function FinanceSummary({
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Accounts Payable
+              {t('dashboard.finance.accountsPayable')}
             </CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -143,7 +146,7 @@ export function FinanceSummary({
               <div className="text-2xl font-bold">{formatCurrency(accountsPayable)}</div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              Money owed to vendors
+              {t('dashboard.finance.moneyOwedToVendors')}
             </p>
           </CardContent>
         </Card>

@@ -220,3 +220,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Radix UI](https://www.radix-ui.com/)
 - [Prisma](https://www.prisma.io/)
 - [NextAuth.js](https://next-auth.js.org/)
+
+Fetch update by:
+pnpm build
+then:
+systemctl restart erp.service
+check is running 'active':
+systemctl is-active erp.service

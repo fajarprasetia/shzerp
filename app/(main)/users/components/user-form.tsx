@@ -60,6 +60,11 @@ export function UserForm({ initialData, onSubmit, onCancel, roles = [] }: UserFo
     },
   });
 
+  // Log roles data for debugging
+  React.useEffect(() => {
+    console.log("Roles data:", roles);
+  }, [roles]);
+
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;

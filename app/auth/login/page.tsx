@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, Suspense, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -17,17 +17,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
-import { signInAction } from '@/app/actions/auth-actions';
 
 const formSchema = z.object({
   email: z.string().email({ message: 'Please enter a valid email address' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters' }),
 });
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -40,13 +37,43 @@ export default function LoginPage() {
     },
   });
 
+  // Clear any problematic cookies on page load
+  useEffect(() => {
+    // Clear any existing cookies that might be causing issues
+    document.cookie.split(';').forEach(cookie => {
+      const [name] = cookie.trim().split('=');
+      if (name.includes('next-auth') || name.includes('callbackUrl')) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      }
+    });
+    
+    // Remove any callback URL from the current URL
+    if (window.location.search.includes('callbackUrl')) {
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     setLoginError(null);
     
     try {
       console.log('Submitting login form with email:', values.email);
-      const result = await signInAction(values.email, values.password);
+      
+      // Use our custom login endpoint instead of NextAuth
+      const response = await fetch('/api/auth/custom-login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: values.email,
+          password: values.password,
+        }),
+      });
+      
+      const result = await response.json();
 
       if (!result.success) {
         console.log('Login failed:', result.error);
@@ -58,19 +85,18 @@ export default function LoginPage() {
         });
         setIsLoading(false);
       } else {
-        console.log('Login successful, redirecting to:', callbackUrl);
+        console.log('Login successful');
         toast({
           title: 'Login successful',
           description: 'Redirecting to dashboard...',
         });
         
-        // Add a delay before redirecting to ensure cookies are set
-        setTimeout(() => {
-          // Properly decode the URL and redirect
-          const redirectUrl = callbackUrl ? decodeURIComponent(callbackUrl) : '/dashboard';
-          console.log('Redirecting to:', redirectUrl);
-          window.location.href = redirectUrl;
-        }, 1000);
+        // Use a direct approach for redirection
+        const dashboardUrl = `${window.location.origin}/dashboard`;
+        console.log('Redirecting to:', dashboardUrl);
+        
+        // Force a complete page reload to the dashboard URL
+        window.location.replace(dashboardUrl);
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -155,5 +181,26 @@ export default function LoginPage() {
         </CardFooter>
       </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-2xl font-bold">Loading...</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex justify-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 } 

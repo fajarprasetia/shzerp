@@ -12,7 +12,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
+    const id = params.id;
+    console.log(`Fetching customer with ID: ${id}`);
     
     const customer = await prisma.customer.findUnique({
       where: {
@@ -21,12 +22,14 @@ export async function GET(
     });
 
     if (!customer) {
+      console.log(`Customer with ID ${id} not found`);
       return NextResponse.json(
         { error: "Customer not found" },
         { status: 404 }
       );
     }
 
+    console.log(`Successfully retrieved customer: ${customer.name}`);
     return NextResponse.json(customer);
   } catch (error) {
     console.error("[CUSTOMER_GET]", error);

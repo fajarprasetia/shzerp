@@ -11,9 +11,10 @@ export async function GET() {
           },
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: [
+        { isSold: "asc" },
+        { createdAt: "desc" },
+      ],
     });
 
     // Map inspectedBy to inspector for frontend compatibility
@@ -46,11 +47,11 @@ export async function POST(request: Request) {
     const count = await prisma.stock.count({
       where: {
         jumboRollNo: {
-          startsWith: `SHZ-${month}${year}`,
+          startsWith: `SHZ${year}${month}`,
         },
       },
     });
-    const jumboRollNo = `SHZ-${month}${year}${String(count + 1).padStart(4, '0')}`;
+    const jumboRollNo = `SHZ${year}${month}${String(count + 1).padStart(4, '0')}`;
 
     const stock = await prisma.stock.create({
       data: {
@@ -144,20 +145,42 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
+    // Check if there's a body payload for batch deletion
+    if (request.headers.get('content-type')?.includes('application/json')) {
+      // Batch deletion
+      const { ids } = await request.json();
+      
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return NextResponse.json({ error: "No valid IDs provided" }, { status: 400 });
+      }
+      
+      // Delete multiple stocks
+      await prisma.stock.deleteMany({
+        where: {
+          id: {
+            in: ids
+          }
+        }
+      });
+      
+      return NextResponse.json({ success: true });
+    } else {
+      // Single item deletion via query parameter
+      const { searchParams } = new URL(request.url);
+      const id = searchParams.get("id");
 
-    if (!id) {
-      return NextResponse.json({ error: "Stock ID is required" }, { status: 400 });
+      if (!id) {
+        return NextResponse.json({ error: "Stock ID is required" }, { status: 400 });
+      }
+
+      await prisma.stock.delete({
+        where: {
+          id,
+        },
+      });
+
+      return NextResponse.json({ success: true });
     }
-
-    await prisma.stock.delete({
-      where: {
-        id,
-      },
-    });
-
-    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting stock:", error);
     return NextResponse.json({ error: "Error deleting stock" }, { status: 500 });

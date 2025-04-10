@@ -1,4 +1,4 @@
-import { BrowserMultiFormatReader, Result, BarcodeFormat } from '@zxing/library';
+import { BrowserMultiFormatReader, Result, BarcodeFormat, Exception } from '@zxing/library';
 
 interface BarcodeResult {
   success: boolean;
@@ -6,62 +6,137 @@ interface BarcodeResult {
   error?: string;
 }
 
-export async function scanBarcode(): Promise<BarcodeResult> {
-  try {
-    const codeReader = new BrowserMultiFormatReader();
-    
-    // Configure hints for better performance
-    const hints = new Map();
-    hints.set(BarcodeFormat.CODE_128, true);
-    hints.set(BarcodeFormat.EAN_13, true);
-    hints.set(BarcodeFormat.QR_CODE, true);
-    
-    // Request camera access
-    const videoInputDevices = await codeReader.listVideoInputDevices();
-    if (videoInputDevices.length === 0) {
-      throw new Error('No camera found');
-    }
+interface CameraDevice {
+  deviceId: string;
+  label: string;
+  facingMode?: string;
+}
 
-    // Use the first available camera
-    const selectedDeviceId = videoInputDevices[0].deviceId;
-
-    // Create video element for preview
-    const previewElem = document.createElement('video');
-    previewElem.style.position = 'fixed';
-    previewElem.style.top = '50%';
-    previewElem.style.left = '50%';
-    previewElem.style.transform = 'translate(-50%, -50%)';
-    previewElem.style.zIndex = '9999';
-    document.body.appendChild(previewElem);
-
+export async function scanBarcode(useBackCamera: boolean = true): Promise<BarcodeResult> {
+  return new Promise((resolve) => {
     try {
-      // Start scanning
-      const result: Result = await codeReader.decodeFromVideoDevice(
-        selectedDeviceId,
-        previewElem,
-        (result, error) => {
-          if (result) {
-            // Stop scanning when a barcode is found
-            codeReader.reset();
-            document.body.removeChild(previewElem);
+      // Create modal container
+      const modalContainer = document.createElement('div');
+      modalContainer.style.position = 'fixed';
+      modalContainer.style.top = '0';
+      modalContainer.style.left = '0';
+      modalContainer.style.width = '100%';
+      modalContainer.style.height = '100%';
+      modalContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+      modalContainer.style.zIndex = '9999';
+      modalContainer.style.display = 'flex';
+      modalContainer.style.flexDirection = 'column';
+      modalContainer.style.justifyContent = 'center';
+      modalContainer.style.alignItems = 'center';
+      
+      // Create video element for preview
+      const previewElem = document.createElement('video');
+      previewElem.style.maxWidth = '90%';
+      previewElem.style.maxHeight = '70%';
+      previewElem.style.borderRadius = '8px';
+      previewElem.style.backgroundColor = '#000';
+      
+      // Create close button
+      const closeButton = document.createElement('button');
+      closeButton.textContent = 'Cancel';
+      closeButton.style.marginTop = '20px';
+      closeButton.style.padding = '8px 16px';
+      closeButton.style.backgroundColor = '#f44336';
+      closeButton.style.color = 'white';
+      closeButton.style.border = 'none';
+      closeButton.style.borderRadius = '4px';
+      closeButton.style.cursor = 'pointer';
+      
+      // Add elements to modal
+      modalContainer.appendChild(previewElem);
+      modalContainer.appendChild(closeButton);
+      document.body.appendChild(modalContainer);
+      
+      // Initialize barcode reader
+      const codeReader = new BrowserMultiFormatReader();
+      
+      // Handle close button click
+      closeButton.addEventListener('click', () => {
+        codeReader.reset();
+        document.body.removeChild(modalContainer);
+        resolve({
+          success: false,
+          error: 'Scanning cancelled'
+        });
+      });
+      
+      // Start the camera
+      const startCamera = async () => {
+        try {
+          // Get available cameras
+          const videoInputDevices = await codeReader.listVideoInputDevices();
+          if (videoInputDevices.length === 0) {
+            throw new Error('No camera found');
           }
+          
+          // Select appropriate camera
+          let selectedDeviceId = undefined;
+          
+          if (useBackCamera) {
+            // Try to find back camera
+            const backCamera = videoInputDevices.find(device => 
+              device.label.toLowerCase().includes('back') || 
+              device.label.toLowerCase().includes('environment')
+            );
+            selectedDeviceId = backCamera?.deviceId;
+          } else {
+            // Try to find front camera
+            const frontCamera = videoInputDevices.find(device => 
+              device.label.toLowerCase().includes('front') || 
+              device.label.toLowerCase().includes('user')
+            );
+            selectedDeviceId = frontCamera?.deviceId;
+          }
+          
+          // Fall back to first camera if preferred one not found
+          if (!selectedDeviceId && videoInputDevices.length > 0) {
+            selectedDeviceId = videoInputDevices[0].deviceId;
+          }
+          
+          // Start scanning
+          codeReader.decodeFromVideoDevice(
+            selectedDeviceId,
+            previewElem,
+            (result, error) => {
+              if (result) {
+                // Successfully detected barcode
+                codeReader.reset();
+                document.body.removeChild(modalContainer);
+                resolve({
+                  success: true,
+                  data: result.getText()
+                });
+              }
+              if (error && !(error instanceof Exception)) {
+                console.error(error);
+              }
+            }
+          );
+          
+        } catch (error) {
+          document.body.removeChild(modalContainer);
+          resolve({
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to start camera'
+          });
         }
-      );
-
-      return {
-        success: true,
-        data: result.getText()
       };
+      
+      // Start camera access
+      startCamera();
+      
     } catch (error) {
-      document.body.removeChild(previewElem);
-      throw error;
+      resolve({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to scan barcode'
+      });
     }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to scan barcode'
-    };
-  }
+  });
 }
 
 export async function validateStockBarcode(barcode: string): Promise<any> {
@@ -77,35 +152,7 @@ export async function validateStockBarcode(barcode: string): Promise<any> {
 }
 
 export function generateBarcode(text: string): string {
-  // Generate CODE128 barcode
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Failed to get canvas context');
-
-  // Set canvas size
-  canvas.width = 200;
-  canvas.height = 100;
-
-  // Clear canvas
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Draw barcode
-  const x = 10;
-  const y = 10;
-  const width = 180;
-  const height = 80;
-
-  // Generate barcode using @zxing/library
-  const writer = new window.ZXing.BrowserQRCodeSvgWriter();
-  const svgString = writer.write(text, width, height);
-  
-  // Convert SVG to image and draw on canvas
-  const img = new Image();
-  img.src = 'data:image/svg+xml;base64,' + btoa(svgString);
-  img.onload = () => {
-    ctx.drawImage(img, x, y);
-  };
-
-  return canvas.toDataURL('image/png');
+  // This is a placeholder - generating barcodes properly requires a library
+  // In a real implementation, use a proper barcode generation library
+  return `data:image/png;base64,${btoa(text)}`;
 } 

@@ -3,6 +3,10 @@ import { Stock, User } from "@prisma/client";
 
 export interface StockWithInspector extends Stock {
   inspectedBy: User | null;
+  isSold?: boolean;
+  orderNo?: string;
+  soldDate?: Date;
+  customerName?: string;
 }
 
 export function useStockData() {

@@ -12,18 +12,13 @@ import { RecentPayments } from "./components/recent-payments";
 import { ReportsGrid } from "./components/reports-grid";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { PlusCircle, CreditCard, FileText, BarChart3 } from "lucide-react";
+import { CreditCard, FileText, BarChart3, DollarSign } from "lucide-react";
 
 export default withPermission(FinancePage, "finance", "read");
 
 function FinancePage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("dashboard");
-
-  const handleRecordPayment = () => {
-    // Navigate to the payment form
-    router.push("/finance/payments/new");
-  };
 
   const handleCashManagementClick = () => {
     router.push("/finance/cash-management");
@@ -39,14 +34,8 @@ function FinancePage() {
 
   return (
     <div className="container mx-auto py-8">
-      <div className="flex justify-between items-center mb-8">
+      <div className="mb-8">
         <h1 className="text-3xl font-bold">Finance Overview</h1>
-        <PermissionGate resource="finance" action="create">
-          <Button onClick={handleRecordPayment}>
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Record Payment
-          </Button>
-        </PermissionGate>
       </div>
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -87,6 +76,26 @@ function FinancePage() {
               </CardHeader>
               <CardContent>
                 <BarChart3 className="h-8 w-8 text-primary" />
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push("/finance/budgets")}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg">Budgets</CardTitle>
+                <CardDescription>Manage and track budget allocations</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <DollarSign className="h-8 w-8 text-primary" />
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push("/finance/tax-management")}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg">Tax Management</CardTitle>
+                <CardDescription>Manage tax settings, calculations, and filings</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <DollarSign className="h-8 w-8 text-primary" />
               </CardContent>
             </Card>
           </div>

@@ -104,4 +104,6 @@ export const {
       },
     },
   },
+  // Add trusted hosts configuration
+  trustHost: true,
 }); 

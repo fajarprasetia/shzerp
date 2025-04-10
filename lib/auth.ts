@@ -1,9 +1,6 @@
-import { auth as nextAuth } from "@/auth";
+import { auth } from "@/auth";
 
-export async function auth() {
-  const session = await nextAuth();
-  return session;
-}
+export { auth };
 
 export async function getCurrentUser() {
   const session = await auth();

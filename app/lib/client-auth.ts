@@ -34,26 +34,16 @@ export function useIsAuthenticated() {
             'Pragma': 'no-cache',
             'Expires': '0',
           },
-          next: { revalidate: 0 },
         });
         
         // Always parse the response, even if it's not OK
         const data = await response.json();
         
-        // Special case for login page to prevent redirection loops
-        if (data.fromLogin) {
-          setIsAuthenticated(false);
-        } else {
-          setIsAuthenticated(!!data.user);
-        }
+        // Check if user data exists in the response
+        setIsAuthenticated(!!data.user);
       } catch (error) {
-        // Silently handle errors on auth pages
-        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/auth/')) {
-          setIsAuthenticated(false);
-        } else {
-          console.error('Error checking authentication:', error);
-          setIsAuthenticated(false);
-        }
+        console.error('Error checking authentication:', error);
+        setIsAuthenticated(false);
       } finally {
         setIsLoading(false);
       }
@@ -76,12 +66,9 @@ export function redirectToLogin(callbackUrl?: string, force: boolean = false) {
     return;
   }
   
-  const url = callbackUrl || window.location.pathname;
-  const encodedUrl = encodeURIComponent(url);
-  
-  // Use window.location for client-side navigation
+  // Use direct navigation with replace for a clean redirect
   if (typeof window !== 'undefined') {
-    window.location.href = `/auth/login?callbackUrl=${encodedUrl}`;
+    window.location.replace('/auth/login');
   }
 }
 

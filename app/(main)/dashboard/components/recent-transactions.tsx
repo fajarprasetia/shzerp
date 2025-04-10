@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PermissionGate } from "@/app/components/permission-gate";
 import { format } from "date-fns";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface Transaction {
   id: string;
@@ -24,11 +25,13 @@ export function RecentTransactions({
   transactions,
   isLoading,
 }: RecentTransactionsProps) {
+  const { t } = useTranslation();
+  
   return (
     <PermissionGate resource="finance" action="read">
       <Card className="col-span-full">
         <CardHeader>
-          <CardTitle>Recent Transactions</CardTitle>
+          <CardTitle>{t('dashboard.transactions.recentTransactions')}</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -72,7 +75,7 @@ export function RecentTransactions({
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No recent transactions found.</p>
+            <p className="text-sm text-muted-foreground">{t('dashboard.transactions.noTransactions')}</p>
           )}
         </CardContent>
       </Card>

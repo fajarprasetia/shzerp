@@ -16,6 +16,7 @@ import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { LucideIcon } from "lucide-react";
 import * as Icons from "lucide-react";
+import { format } from "date-fns";
 
 interface BudgetListProps {
   budgets: Budget[];
@@ -35,6 +36,24 @@ export function BudgetList({ budgets, isLoading, onSelect }: BudgetListProps) {
     return "bg-green-500";
   };
 
+  const formatDateRange = (startDate: Date, endDate?: Date | null) => {
+    const start = format(new Date(startDate), "dd MMM yyyy");
+    
+    if (!endDate) {
+      if (budgets.length > 0 && budgets[0].period === "monthly") {
+        return `Monthly (from ${start})`;
+      } else if (budgets.length > 0 && budgets[0].period === "quarterly") {
+        return `Quarterly (from ${start})`;
+      } else if (budgets.length > 0 && budgets[0].period === "yearly") {
+        return `Yearly (from ${start})`;
+      }
+      return `From ${start}`;
+    }
+    
+    const end = format(new Date(endDate), "dd MMM yyyy");
+    return `${start} - ${end}`;
+  };
+
   return (
     <div className="rounded-md border">
       <Table>
@@ -49,7 +68,13 @@ export function BudgetList({ budgets, isLoading, onSelect }: BudgetListProps) {
         </TableHeader>
         <TableBody>
           {budgets.map((budget) => {
-            const BudgetIcon = getIcon(BUDGET_CATEGORIES[budget.category]?.icon || "HelpCircle");
+            const categoryData = typeof BUDGET_CATEGORIES[budget.category] === 'object' 
+              ? BUDGET_CATEGORIES[budget.category] 
+              : { label: BUDGET_CATEGORIES[budget.category], icon: 'HelpCircle' };
+            
+            const iconName = typeof categoryData === 'object' ? categoryData.icon : 'HelpCircle';
+            const BudgetIcon = getIcon(iconName || "HelpCircle");
+            
             const progressColor = getProgressColor(budget.spent, budget.amount);
             const progress = (budget.spent / budget.amount) * 100;
 
@@ -68,18 +93,16 @@ export function BudgetList({ budgets, isLoading, onSelect }: BudgetListProps) {
                     <div className="flex flex-col">
                       <span className="font-medium">{budget.name}</span>
                       <span className="text-sm text-muted-foreground">
-                        {BUDGET_CATEGORIES[budget.category]?.label || budget.category}
+                        {typeof categoryData === 'object' ? categoryData.label : budget.category}
                       </span>
                     </div>
                   </div>
                 </TableCell>
                 <TableCell>
                   <Badge variant="secondary">
-                    {budget.isRecurring
-                      ? budget.recurringPeriod
-                      : `${new Date(budget.startDate).toLocaleDateString()} - ${new Date(
-                          budget.endDate
-                        ).toLocaleDateString()}`}
+                    {budget.period !== "custom" 
+                      ? budget.period.charAt(0).toUpperCase() + budget.period.slice(1)
+                      : formatDateRange(budget.startDate, budget.endDate)}
                   </Badge>
                 </TableCell>
                 <TableCell>{formatCurrency(budget.amount)}</TableCell>
@@ -98,10 +121,11 @@ export function BudgetList({ budgets, isLoading, onSelect }: BudgetListProps) {
               </TableRow>
             );
           })}
+
           {budgets.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center">
-                {isLoading ? "Loading..." : "No budgets found"}
+              <TableCell colSpan={5} className="h-24 text-center">
+                No budgets found
               </TableCell>
             </TableRow>
           )}

@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       
       for (let i = 0; i < rollCount; i++) {
         const sequence = String.fromCharCode(65 + i); // A, B, C, ...
-        const rollNo = `${stock.jumboRollNo}-${sequence}`;
+        const rollNo = `${stock.jumboRollNo}${sequence}`;
         
         const dividedRoll = await tx.divided.create({
           data: {
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
             barcodeId: rollNo, // Use roll number as barcode ID
             width: stock.width,
             length: meterPerRoll,
+            remainingLength: meterPerRoll, // Add the required remainingLength field
             weight: (stock.weight / stock.length) * meterPerRoll, // Calculate proportional weight
             note: note || null,
             stockId: stock.id,

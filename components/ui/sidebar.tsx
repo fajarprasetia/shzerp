@@ -21,11 +21,15 @@ import {
   FileText,
   DollarSign,
   ChevronDown,
+  Truck,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { usePermissions } from "@/app/hooks/use-permissions";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
+import { withI18nLoader } from '@/components/i18n-loader';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -39,6 +43,7 @@ interface SidebarItemData {
   children?: SidebarItemData[];
   resource?: string;
   action?: string;
+  translationKey?: string;
 }
 
 interface SidebarItem extends SidebarItemData {
@@ -51,16 +56,18 @@ const navigation: SidebarItem[] = [
     href: "/dashboard",
     icon: LayoutDashboard,
     resource: "dashboard",
+    translationKey: "navigation.dashboard"
   },
   {
     title: "Inventory",
     href: "/inventory",
     icon: Box,
     resource: "inventory",
+    translationKey: "navigation.inventory",
     children: [
-      { title: "Stock", href: "/inventory/stock", resource: "inventory" },
-      { title: "Divided", href: "/inventory/divided", resource: "inventory" },
-      { title: "Inspection", href: "/inventory/inspection", resource: "inventory" },
+      { title: "Stock", href: "/inventory/stock", resource: "inventory", translationKey: "navigation.stockModule" },
+      { title: "Divided", href: "/inventory/divided", resource: "inventory", translationKey: "navigation.divided" },
+      { title: "Inspection", href: "/inventory/inspection", resource: "inventory", translationKey: "navigation.inspection" },
     ],
   },
   {
@@ -68,10 +75,22 @@ const navigation: SidebarItem[] = [
     href: "/sales",
     icon: ShoppingCart,
     resource: "sales",
+    translationKey: "navigation.sales",
     children: [
-      { title: "Orders", href: "/sales/orders", resource: "sales" },
-      { title: "Customers", href: "/sales/customers", resource: "sales" },
-      { title: "Invoices", href: "/sales/invoices", resource: "sales" },
+      { title: "Customers", href: "/sales/customers", resource: "sales", translationKey: "navigation.customers" },
+      { title: "Orders", href: "/sales/orders", resource: "sales", translationKey: "navigation.orders" },      
+      { title: "Invoices", href: "/sales/invoices", resource: "sales", translationKey: "sales.invoices.title" },
+    ],
+  },
+  {
+    title: "Shipment",
+    href: "/shipment",
+    icon: Truck,
+    resource: "shipment",
+    translationKey: "sales.shipment.title",
+    children: [
+      { title: "Orders to Ship", href: "/shipment/orders", resource: "shipment", translationKey: "sales.shipment.ordersToShip" },
+      { title: "Shipping History", href: "/shipment/history", resource: "shipment", translationKey: "sales.shipment.shippingHistory" },
     ],
   },
   {
@@ -79,63 +98,57 @@ const navigation: SidebarItem[] = [
     href: "/finance",
     icon: Wallet,
     resource: "finance",
+    translationKey: "sales.finance.title",
     children: [
-      { title: "Overview", href: "/finance", resource: "finance" },
+      { title: "Overview", href: "/finance", resource: "finance", translationKey: "dashboard.overview" },
       { 
         title: "Accounts Receivable", 
         href: "/finance/accounts-receivable",
         icon: Receipt,
         resource: "finance",
-        children: [
-          { title: "Sales Invoices", href: "/sales/invoices", resource: "sales" },
-          { title: "Payments Received", href: "/finance/accounts-receivable?tab=payments", resource: "finance" },
-          { title: "Aging Report", href: "/finance/accounts-receivable?tab=aging", resource: "finance" },
-          { title: "Collections", href: "/finance/accounts-receivable?tab=collections", resource: "finance" },
-        ]
+        translationKey: "sales.finance.accountsReceivable.title"
       },
       { 
         title: "Accounts Payable", 
         href: "/finance/accounts-payable",
         icon: CreditCard,
         resource: "finance",
-        children: [
-          { title: "Vendor Bills", href: "/finance/accounts-payable", resource: "finance" },
-          { title: "Payment Tracking", href: "/finance/accounts-payable?tab=payments", resource: "finance" },
-          { title: "Aging Report", href: "/finance/accounts-payable?tab=aging", resource: "finance" },
-        ]
+        translationKey: "sales.finance.accountsPayable.title"
       },
       { 
         title: "Cash Management", 
         href: "/finance/cash-management",
         icon: PiggyBank,
         resource: "finance",
-        children: [
-          { title: "Bank Accounts", href: "/finance/cash-management", resource: "finance" },
-          { title: "Transactions", href: "/finance/cash-management?tab=transactions", resource: "finance" },
-          { title: "Reconciliation", href: "/finance/cash-management?tab=reconciliation", resource: "finance" },
-        ]
+        translationKey: "sales.finance.cashManagement"
       },
       {
         title: "General Ledger",
         href: "/finance/general-ledger",
         icon: FileText,
         resource: "finance",
-        children: [
-          { title: "Chart of Accounts", href: "/finance/general-ledger", resource: "finance" },
-          { title: "Journal Entries", href: "/finance/general-ledger?tab=journal-entries", resource: "finance" },
-          { title: "General Ledger", href: "/finance/general-ledger?tab=general-ledger", resource: "finance" },
-          { title: "Trial Balance", href: "/finance/general-ledger?tab=trial-balance", resource: "finance" },
-        ]
+        translationKey: "sales.finance.generalLedger"
+      },
+      { 
+        title: "Budgets", 
+        href: "/finance/budgets",
+        icon: DollarSign,
+        resource: "finance",
+        translationKey: "sales.finance.budgets"
+      },
+      { 
+        title: "Tax Management", 
+        href: "/finance/tax-management",
+        icon: DollarSign,
+        resource: "finance",
+        translationKey: "sales.finance.taxManagement"
       },
       { 
         title: "Reports", 
         href: "/finance/reports",
         icon: FileText,
         resource: "finance",
-        children: [
-          { title: "Profit & Loss", href: "/finance/reports?type=profit-loss", resource: "finance" },
-          { title: "Balance Sheet", href: "/finance/reports?type=balance-sheet", resource: "finance" },
-        ]
+        translationKey: "sales.finance.reports"
       },
     ],
   },
@@ -144,18 +157,21 @@ const navigation: SidebarItem[] = [
     href: "/tasks",
     icon: ClipboardList,
     resource: "tasks",
+    translationKey: "navigation.tasks"
   },
   {
     title: "Users",
     href: "/users",
     icon: Users,
     resource: "users",
+    translationKey: "navigation.users"
   },
   {
     title: "Settings",
     href: "/settings",
     icon: Settings,
     resource: "settings",
+    translationKey: "navigation.settings"
   },
 ];
 
@@ -166,6 +182,7 @@ function SidebarItem({
   children,
   resource,
   action = "read",
+  translationKey,
 }: SidebarItem) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = React.useState(false);
@@ -173,6 +190,7 @@ function SidebarItem({
   const [mounted, setMounted] = React.useState(false);
   const { hasPermission, isSystemAdmin, isAdmin, isLoading } = usePermissions();
   const isActive = pathname === href || pathname?.startsWith(href + "/");
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
 
   // Set initial open state after mounting to avoid hydration mismatch
   React.useEffect(() => {
@@ -206,6 +224,9 @@ function SidebarItem({
       hasPermission(child.resource, child.action || 'read');
   });
 
+  // Translate the title
+  const displayTitle = translationKey ? t(translationKey, title) : title;
+
   // If there are no children or all children are filtered out, render a simple link
   if (!filteredChildren?.length) {
     return (
@@ -219,7 +240,7 @@ function SidebarItem({
         )}
       >
         {Icon && <Icon className="h-4 w-4" />}
-        {title}
+        {displayTitle}
       </Link>
     );
   }
@@ -238,7 +259,7 @@ function SidebarItem({
       >
         <div className="flex items-center gap-x-3">
           {Icon && <Icon className="h-4 w-4" />}
-          {title}
+          {displayTitle}
         </div>
         <ChevronDown
           className={cn("h-4 w-4 transition-transform", isOpen && "rotate-180")}
@@ -255,10 +276,11 @@ function SidebarItem({
   );
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+function SidebarComponent({ isOpen, onClose }: SidebarProps) {
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
   const { isLoading } = usePermissions();
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
   
   // After mounting, we have access to the theme
   React.useEffect(() => {
@@ -278,7 +300,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
               <span className="text-primary font-bold">SHZ</span>
             </div>
-            <span className="text-xl font-bold">ERP System</span>
+            <span className="text-xl font-bold">{t('common.erpSystem', 'ERP System')}</span>
           </div>
         </div>
         <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
@@ -310,7 +332,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
               <span className="text-primary font-bold">SHZ</span>
             </div>
-            <span className="text-xl font-bold">ERP System</span>
+            <span className="text-xl font-bold">{t('common.erpSystem', 'ERP System')}</span>
           </Link>
           <Button
             variant="ghost"
@@ -331,4 +353,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       </aside>
     </>
   );
-} 
+}
+
+// Export the sidebar component wrapped with the withI18nLoader HOC
+export const Sidebar = withI18nLoader(SidebarComponent); 

@@ -5,6 +5,7 @@ import { PermissionGate } from "@/app/components/permission-gate";
 import { formatCurrency } from "../utils/format-currency";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Package, DollarSign, CheckSquare } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface OverviewCardsProps {
   inventoryCount: {
@@ -26,13 +27,15 @@ export function OverviewCards({
   pendingTasks,
   isLoading,
 }: OverviewCardsProps) {
+  const { t } = useTranslation();
+  
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <PermissionGate resource="inventory" action="read">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Inventory
+              {t('dashboard.cards.inventory')}
             </CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -44,11 +47,11 @@ export function OverviewCards({
             )}
             <div className="flex flex-col space-y-1">
               <p className="text-xs text-muted-foreground">
-                Items in stock
+                {t('dashboard.cards.itemsInStock')}
               </p>
               <div className="text-xs text-muted-foreground flex justify-between">
-                <span>Stock: {inventoryCount.stock}</span>
-                <span>Divided: {inventoryCount.divided}</span>
+                <span>{t('dashboard.cards.stock')}: {inventoryCount.stock}</span>
+                <span>{t('dashboard.cards.divided')}: {inventoryCount.divided}</span>
               </div>
             </div>
           </CardContent>
@@ -59,7 +62,7 @@ export function OverviewCards({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Sales
+              {t('dashboard.cards.sales')}
             </CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -71,10 +74,10 @@ export function OverviewCards({
             )}
             <div className="flex flex-col space-y-1">
               <p className="text-xs text-muted-foreground">
-                Revenue this month
+                {t('dashboard.cards.revenueThisMonth')}
               </p>
               <p className="text-xs text-muted-foreground">
-                Orders: {sales.orderCount}
+                {t('dashboard.cards.orders')}: {sales.orderCount}
               </p>
             </div>
           </CardContent>
@@ -85,7 +88,7 @@ export function OverviewCards({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Tasks
+              {t('dashboard.cards.tasks')}
             </CardTitle>
             <CheckSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -96,7 +99,7 @@ export function OverviewCards({
               <div className="text-2xl font-bold">{pendingTasks}</div>
             )}
             <p className="text-xs text-muted-foreground">
-              Pending tasks
+              {t('dashboard.cards.pendingTasks')}
             </p>
           </CardContent>
         </Card>

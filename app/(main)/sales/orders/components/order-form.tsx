@@ -44,6 +44,8 @@ import { notifyTransactionCreated } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { useOrderFormData } from "@/hooks/use-order-form-data";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslation } from "react-i18next";
+import i18nInstance from "@/app/i18n";
 
 const productTypes = ["Sublimation Paper", "Protect Paper", "DTF Film", "Ink"] as const;
 const sublimationProducts = ["Jumbo Roll", "Roll"] as const;
@@ -60,10 +62,8 @@ interface DividedWithGSM extends Divided {
 }
 
 interface OrderFormProps {
-  initialData?: (Order & {
-    orderItems: PrismaOrderItem[];
-  }) | null;
-  onSuccess: () => void;
+  initialData?: OrderWithCustomer;
+  onSubmit: (data: any) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -140,11 +140,12 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) {
+export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
-  const { customers, stocks, dividedStocks, isLoading } = useOrderFormData();
+  const { t } = useTranslation(undefined, { i18n: i18nInstance });
+  const [isLoading, setIsLoading] = useState(false);
+  const { customers, stocks, dividedStocks, isLoading: orderFormDataLoading } = useOrderFormData();
   const [open, setOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [checkedItems, setCheckedItems] = useState<number[]>([]);
@@ -274,14 +275,27 @@ export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) 
     const items = form.getValues("orderItems") || [];
     console.log('Calculating total for items:', items);
 
-    const total = items.reduce((sum, item) => {
+    let totalSum = 0;
+    const itemDetails = items.map(item => {
       const itemTotal = calculateItemTotal(item);
-      console.log('Item total:', itemTotal);
-      return sum + itemTotal;
-    }, 0);
-
-    console.log('Final total:', total);
-    return total;
+      totalSum += itemTotal;
+      
+      // Create detailed calculation info for logging
+      return {
+        type: item.type,
+        product: item.product,
+        price: Number(item.price),
+        quantity: Number(item.quantity),
+        tax: Number(item.tax),
+        taxMultiplier: 1 + (Number(item.tax) / 100),
+        itemTotal
+      };
+    });
+    
+    console.log('Item-by-item calculation details:', itemDetails);
+    console.log('Final calculated total:', totalSum);
+    
+    return totalSum;
   };
 
   const getAvailableGSM = (type: string, product?: string) => {
@@ -458,86 +472,127 @@ export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) 
   };
 
   // Update the onSubmit function
-  const onSubmit = async (data: FormValues) => {
+  const handleSubmit = async (data: FormValues) => {
     try {
-      setLoading(true);
-      console.log('Submitting form data:', data);
-
-      // Prepare order items data
-      const orderItems = data.orderItems.map(item => {
-        const baseItem = {
-          type: item.type,
-          price: Number(item.price),
-          tax: Number(item.tax),
-        };
-
-        if (item.type === "Sublimation Paper") {
-          if (item.product === "Jumbo Roll") {
-            return {
-              ...baseItem,
-              product: item.product,
-              gsm: item.gsm,
-              width: item.width,
-              weight: item.weight,
-              quantity: 1, // Jumbo Roll always has quantity 1
-            };
-          } else if (item.product === "Roll") {
-            return {
-              ...baseItem,
-              product: item.product,
-              gsm: item.gsm,
-              width: item.width,
-              length: item.length,
-              quantity: Number(item.quantity) || 1,
-            };
-          }
-        }
-
-        return {
-          ...baseItem,
-          quantity: Number(item.quantity) || 1,
-        };
-      });
-
-      const endpoint = initialData 
-        ? `/api/sales/orders/${initialData.id}` 
-        : '/api/sales/orders';
-
-      const response = await fetch(endpoint, {
-        method: initialData ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerId: data.customerId,
-          orderItems,
-          note: data.note,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || `Failed to ${initialData ? 'update' : 'create'} order`);
+      setIsLoading(true);
+      
+      // Validate required fields
+      if (!data.customerId) {
+        throw new Error(t('sales.orders.errors.customerRequired', 'Customer is required'));
       }
 
-      const responseData = await response.json();
-      console.log('API Response:', responseData);
+      if (!data.orderItems || data.orderItems.length === 0) {
+        throw new Error(t('sales.orders.errors.itemsRequired', 'At least one order item is required'));
+      }
 
-      toast({
-        title: `Order ${initialData ? 'updated' : 'created'} successfully`,
-        description: `Order ${responseData.orderNo} has been ${initialData ? 'updated' : 'created'}.`,
+      const orderItems = data.orderItems.map(item => {
+        console.log('Processing item for submission:', item);
+        
+        // Validate item fields
+        if (!item.type) {
+          throw new Error(t('sales.orders.errors.itemTypeRequired', 'Item type is required'));
+        }
+        if (!item.quantity || Number(item.quantity) <= 0) {
+          throw new Error(t('sales.orders.errors.invalidQuantity', 'Invalid quantity'));
+        }
+        if (!item.price || Number(item.price) <= 0) {
+          throw new Error(t('sales.orders.errors.invalidPrice', 'Invalid price'));
+        }
+
+        // Find matching stock/divided item and set stockId
+        let stockId = '';
+        if (item.type === 'Sublimation Paper') {
+          if (item.product === 'Roll') {
+            const dividedStock = dividedStocks.find(d => 
+              d.stock.gsm.toString() === item.gsm &&
+              d.width.toString() === item.width &&
+              d.length.toString() === item.length &&
+              d.remainingLength > 0
+            );
+            stockId = dividedStock?.id || '';
+            console.log('Found Roll stock:', { dividedStock, stockId });
+          } else if (item.product === 'Jumbo Roll') {
+            const stock = stocks.find(s =>
+              s.type === item.type &&
+              s.gsm.toString() === item.gsm &&
+              s.width.toString() === item.width &&
+              s.weight.toString() === item.weight &&
+              s.remainingLength > 0
+            );
+            stockId = stock?.id || '';
+            console.log('Found Jumbo Roll stock:', { stock, stockId });
+          }
+        } else if (item.type === 'Protect Paper') {
+          const stock = stocks.find(s =>
+            s.type === item.type &&
+            s.gsm.toString() === item.gsm &&
+            s.width.toString() === item.width &&
+            s.weight.toString() === item.weight &&
+            s.remainingLength > 0
+          );
+          stockId = stock?.id || '';
+          console.log('Found Protect Paper stock:', { stock, stockId });
+        } else if (item.type === 'DTF Film' || item.type === 'Ink') {
+          const stock = stocks.find(s =>
+            s.type === item.type &&
+            s.remainingLength > 0
+          );
+          stockId = stock?.id || '';
+          console.log('Found DTF/Ink stock:', { stock, stockId });
+        }
+
+        if (!stockId) {
+          throw new Error(t('sales.orders.errors.productRequired', 'Please select a valid product from inventory'));
+        }
+
+        const baseItem = {
+          type: item.type,
+          product: item.product || null,
+          gsm: item.gsm || null,
+          width: item.width || null,
+          length: item.length || null,
+          weight: item.weight || null,
+          quantity: Number(item.quantity),
+          price: Number(item.price),
+          tax: Number(item.tax || 0),
+          productId: stockId, // Map stockId to productId for API
+        };
+
+        return baseItem;
       });
 
-      onSuccess();
+      console.log('Prepared order items for submission:', orderItems);
+
+      // Calculate the total amount
+      const totalAmount = calculateOrderTotal();
+      console.log('Total amount for submission:', totalAmount);
+
+      // Prepare final submission data
+      const submissionData = {
+        customerId: data.customerId,
+        orderItems,
+        note: data.note || "",
+        totalAmount: Math.round(totalAmount * 100) / 100, // Round to 2 decimal places
+      };
+
+      console.log('Final submission data:', submissionData);
+
+      await onSubmit(submissionData);
+
     } catch (error) {
-      console.error(`Error ${initialData ? 'updating' : 'creating'} order:`, error);
+      console.error('Form submission error:', {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : `Failed to ${initialData ? 'update' : 'create'} order`,
+        title: t('common.error', 'Error'),
+        description: error instanceof Error ? error.message : t('sales.orders.saveError', 'Failed to save order'),
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -571,6 +626,7 @@ export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) 
       form.setValue(`orderItems.${index}.gsm`, '');
       form.setValue(`orderItems.${index}.width`, '');
       form.setValue(`orderItems.${index}.length`, '');
+      form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when type changes
     }
 
     // Reset dependent fields
@@ -581,6 +637,7 @@ export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) 
         form.setValue(`orderItems.${index}.width`, '');
         form.setValue(`orderItems.${index}.length`, '');
         form.setValue(`orderItems.${index}.quantity`, 1);
+        form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when type changes
         break;
 
       case 'product':
@@ -589,6 +646,7 @@ export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) 
         form.setValue(`orderItems.${index}.length`, '');
         form.setValue(`orderItems.${index}.weight`, '');
         form.setValue(`orderItems.${index}.quantity`, 1);
+        form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when product changes
         break;
 
       case 'gsm':
@@ -596,12 +654,75 @@ export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) 
         form.setValue(`orderItems.${index}.length`, '');
         form.setValue(`orderItems.${index}.weight`, '');
         form.setValue(`orderItems.${index}.quantity`, 1);
+        form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when GSM changes
         break;
 
       case 'width':
         form.setValue(`orderItems.${index}.length`, '');
         form.setValue(`orderItems.${index}.weight`, '');
         form.setValue(`orderItems.${index}.quantity`, 1);
+        form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when width changes
+        break;
+
+      case 'length':
+      case 'weight':
+        // Find matching stock/divided item and set stockId
+        const item = form.getValues(`orderItems.${index}`);
+        const type = item.type;
+        const product = item.product;
+        const gsm = item.gsm;
+        const width = item.width;
+        const length = item.length;
+        const weight = item.weight;
+
+        console.log('Finding matching stock for:', { type, product, gsm, width, length, weight });
+
+        let stockId = '';
+        if (type === 'Sublimation Paper') {
+          if (product === 'Roll') {
+            const dividedStock = dividedStocks.find(d => 
+              d.stock.gsm.toString() === gsm &&
+              d.width.toString() === width &&
+              d.length.toString() === length &&
+              d.remainingLength > 0
+            );
+            stockId = dividedStock?.id || '';
+            console.log('Found Roll stock:', { dividedStock, stockId });
+          } else if (product === 'Jumbo Roll') {
+            const stock = stocks.find(s =>
+              s.type === type &&
+              s.gsm.toString() === gsm &&
+              s.width.toString() === width &&
+              s.weight.toString() === weight &&
+              s.remainingLength > 0
+            );
+            stockId = stock?.id || '';
+            console.log('Found Jumbo Roll stock:', { stock, stockId });
+          }
+        } else if (type === 'Protect Paper') {
+          const stock = stocks.find(s =>
+            s.type === type &&
+            s.gsm.toString() === gsm &&
+            s.width.toString() === width &&
+            s.weight.toString() === weight &&
+            s.remainingLength > 0
+          );
+          stockId = stock?.id || '';
+          console.log('Found Protect Paper stock:', { stock, stockId });
+        } else if (type === 'DTF Film' || type === 'Ink') {
+          const stock = stocks.find(s =>
+            s.type === type &&
+            s.remainingLength > 0
+          );
+          stockId = stock?.id || '';
+          console.log('Found DTF/Ink stock:', { stock, stockId });
+        }
+
+        if (!stockId) {
+          console.warn('No matching stock found for:', { type, product, gsm, width, length, weight });
+        }
+
+        form.setValue(`orderItems.${index}.stockId`, stockId);
         break;
     }
 
@@ -692,7 +813,7 @@ export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) 
     }
   }, [initialData, form]);
 
-  if (isLoading) {
+  if (orderFormDataLoading) {
     return (
       <div className="flex items-center justify-center p-8">
         <div className="flex items-center space-x-2">
@@ -705,7 +826,7 @@ export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) 
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
         <div className="grid grid-cols-1 gap-6">
           {/* Customer Selection */}
         <FormField
@@ -1119,16 +1240,16 @@ export function OrderForm({ initialData, onSuccess, onCancel }: OrderFormProps) 
               type="button"
               variant="outline"
               onClick={onCancel}
-            disabled={loading}
+            disabled={isLoading}
             >
                 Cancel
               </Button>
           <Button 
             type="submit" 
-            disabled={loading}
+            disabled={isLoading}
             className="min-w-[120px]"
           >
-            {loading ? (
+            {isLoading ? (
               <>
                 <div className="mr-2 h-4 w-4 animate-spin rounded-full border-b-2 border-white"></div>
                 {initialData ? 'Updating...' : 'Creating...'}
