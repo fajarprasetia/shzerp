@@ -21,91 +21,85 @@ A comprehensive Enterprise Resource Planning (ERP) system built with modern web 
 - **Database**: Prisma ORM with your preferred database
 - **Styling**: Tailwind CSS with custom theming
 
-## Getting Started
-
-### Prerequisites
+## Prerequisites
 
 - Node.js 18.17 or later
+- PostgreSQL 14 or later
 - pnpm (recommended) or npm
-- Database (PostgreSQL recommended)
+- Git
 
-### Installation
-
-#### Option 1: Standard Setup
+## Quick Start
 
 1. Clone the repository:
-
 ```bash
 git clone https://github.com/fajarprasetia/shzerp.git
 cd shzerp
 ```
 
 2. Install dependencies:
-
 ```bash
 pnpm install
 ```
 
 3. Set up environment variables:
-
-Create a `.env.local` file in the root directory with the following variables:
-
-```
-DATABASE_URL="postgresql://username:password@localhost:5432/erp"
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="your-secret-key"
-```
-
-4. Run database migrations:
-
 ```bash
+cp .env.example .env.local
+```
+Edit `.env.local` with your configuration.
+
+4. Set up the database:
+```bash
+# Create the database
+createdb smartone_erp
+
+# Run migrations
 pnpm prisma migrate dev
-```
 
-5. Seed the database with initial data:
-
-```bash
+# Seed the database
 pnpm prisma db seed
 ```
 
-6. Start the development server:
-
+5. Start the development server:
 ```bash
 pnpm dev
 ```
 
-#### Option 2: Docker Setup
+## Default Admin Accounts
 
-1. Clone the repository:
+The system comes with two default admin accounts:
 
-```bash
-git clone https://github.com/fajarprasetia/shzerp.git
-cd shzerp
-```
+1. System Administrator
+   - Email: systemadministrator@shunhuizhiye.id
+   - Password: shunhui2025
 
-2. Start the application using Docker Compose:
+2. Administrator
+   - Email: admin@shunhuizhiye.id
+   - Password: adminshz@2025
 
-```bash
-docker-compose up -d
-```
+## Database Structure
 
-This will start:
-- The Next.js application on port 3000
-- PostgreSQL database on port 5432
-- pgAdmin (database management tool) on port 5050
+The application uses PostgreSQL with the following default configuration:
+- Database: smartone_erp
+- Username: postgres
+- Password: 0135
+- Port: 5432
 
-3. Run database migrations and seed data:
+## Common Issues
 
-```bash
-docker-compose exec app npx prisma migrate deploy
-docker-compose exec app npx prisma db seed
-```
+1. **Database Connection Issues**
+   - Ensure PostgreSQL is running
+   - Check if the database exists
+   - Verify credentials in .env.local
 
-4. Access the application at http://localhost:3000
+2. **Authentication Issues**
+   - Clear browser cookies
+   - Ensure NEXTAUTH_SECRET is set
+   - Check NEXTAUTH_URL matches your setup
 
-5. Access pgAdmin at http://localhost:5050 (login with admin@example.com / admin)
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the application.
+3. **Build Issues**
+   - Clear .next directory: `rm -rf .next`
+   - Clear node_modules: `rm -rf node_modules`
+   - Reinstall dependencies: `pnpm install`
 
 ## Project Structure
 

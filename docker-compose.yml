@@ -2,67 +2,31 @@ version: '3.8'
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: always
+    build: .
     ports:
       - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://postgres:shzdb2025@postgres:5432/shzerpdb
+      - DATABASE_URL=postgresql://postgres:0135@db:5432/smartone_erp
       - NEXTAUTH_URL=http://localhost:3000
-      - NEXTAUTH_SECRET=your-secret-key-change-this-in-production
-      - NODE_ENV=production
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+    depends_on:
+      - db
     volumes:
-      - ./public/uploads:/app/public/uploads
-    networks:
-      - erp-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      - .:/app
+      - /app/node_modules
+      - /app/.next
 
-  postgres:
-    image: postgres:14-alpine
-    restart: always
+  db:
+    image: postgres:14
+    ports:
+      - "5432:5432"
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=shzdb2025
-      - POSTGRES_DB=shzerpdb
-    ports:
-      - "5433:5432"
+      - POSTGRES_PASSWORD=0135
+      - POSTGRES_DB=smartone_erp
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - erp-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-
-  pgadmin:
-    image: dpage/pgadmin4
-    restart: always
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@example.com
-      - PGADMIN_DEFAULT_PASSWORD=admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
-    networks:
-      - erp-network
+      - postgres_data:/var/lib/postgresql/data
 
 volumes:
-  postgres-data:
-
-networks:
-  erp-network:
-    driver: bridge 
+  postgres_data:
