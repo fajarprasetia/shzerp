@@ -96,14 +96,15 @@ export async function POST(req: Request) {
       data: { status: "shipped" }
     });
 
-    // Mark each inventory item as sold
+    // Use a Set to avoid duplicate updates
+    const updatedDividedIds = new Set<string>();
+    const updatedStockIds = new Set<string>();
     for (const item of scannedItems) {
-      if (item.stockId) {
+      if (item.stockId && !updatedStockIds.has(item.stockId)) {
         // Check if stock exists and is not already sold
         const stock = await prisma.stock.findUnique({
           where: { id: item.stockId }
         });
-        
         if (stock && !stock.isSold) {
           await prisma.stock.update({
             where: { id: item.stockId },
@@ -114,16 +115,15 @@ export async function POST(req: Request) {
               customerName: order.customer?.name || "Unknown"
             }
           });
+          updatedStockIds.add(item.stockId);
           console.log(`Marked stock ${item.stockId} as sold`);
         }
       }
-      
-      if (item.dividedId) {
+      if (item.dividedId && !updatedDividedIds.has(item.dividedId)) {
         // Check if divided exists and is not already sold
         const divided = await prisma.divided.findUnique({
           where: { id: item.dividedId }
         });
-        
         if (divided && !divided.isSold) {
           await prisma.divided.update({
             where: { id: item.dividedId },
@@ -134,10 +134,13 @@ export async function POST(req: Request) {
               customerName: order.customer?.name || "Unknown"
             }
           });
+          updatedDividedIds.add(item.dividedId);
           console.log(`Marked divided ${item.dividedId} as sold`);
         }
       }
     }
+    console.log(`Updated dividedIds:`, Array.from(updatedDividedIds));
+    console.log(`Updated stockIds:`, Array.from(updatedStockIds));
 
     // Format the shipment items to include more detailed information
     const formattedShipment = {

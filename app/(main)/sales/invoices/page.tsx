@@ -80,6 +80,7 @@ interface Invoice {
   createdAt: Date;
   updatedAt: Date;
   orderItems: OrderItem[];
+  discount: number;
 }
 
 interface Order {
@@ -321,33 +322,43 @@ function InvoicesPage() {
 
   const handlePrint = async (invoice: Invoice) => {
     try {
-      if (!invoice || !invoice.customerId) {
-        throw new Error('Invalid invoice data: Missing customer ID');
-      }
-
-      console.log('Raw invoice data:', {
-        id: invoice.id,
-        orderNo: invoice.invoiceNo,
-        customerId: invoice.customerId,
-        orderItemsCount: invoice.orderItems?.length || 0
+      // Fetch the latest invoice data from the API
+      const response = await fetch(`/api/sales/invoices?include=orderItems,stock,divided`, {
+        headers: { 'X-Debug-Mode': 'true' }
       });
-
-      // First fetch the customer data
-      const customerResponse = await fetch(`/api/customers/${invoice.customerId}`);
+      const invoices = await response.json();
+      // Find the invoice by ID
+      const latestInvoice = invoices.find((inv: any) => inv.id === invoice.id);
+      if (!latestInvoice) {
+        toast({
+          title: t('common.error', 'Error'),
+          description: 'Could not find latest invoice data.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      // Fetch customer data as before
+      const customerResponse = await fetch(`/api/customers/${latestInvoice.customerId}`);
       if (!customerResponse.ok) {
         throw new Error(`Failed to fetch customer data: ${customerResponse.statusText}`);
       }
       const customer = await customerResponse.json();
-
-      console.log('Customer data:', customer);
-
-      if (!invoice.orderItems || !Array.isArray(invoice.orderItems)) {
-        console.error('Invalid order items:', invoice.orderItems);
+      // Use latestInvoice for PDF generation
+      if (!latestInvoice.orderItems || !Array.isArray(latestInvoice.orderItems)) {
         throw new Error('Invalid invoice data: Missing or invalid order items');
       }
 
+      console.log('Raw invoice data:', {
+        id: latestInvoice.id,
+        orderNo: latestInvoice.invoiceNo,
+        customerId: latestInvoice.customerId,
+        orderItemsCount: latestInvoice.orderItems?.length || 0
+      });
+
+      console.log('Customer data:', customer);
+
       // Log each order item for debugging
-      invoice.orderItems.forEach((item, index) => {
+      latestInvoice.orderItems.forEach((item, index) => {
         console.log(`Order item ${index + 1} details:`, {
           id: item.id,
           stockType: item.stock?.type,
@@ -361,81 +372,19 @@ function InvoicesPage() {
 
       // Convert invoice to the format expected by the PDF generator
       const orderForPDF = {
-        id: invoice.orderId,
-        orderNo: invoice.invoiceNo,
-        customerId: invoice.customerId,
-        orderItems: invoice.orderItems.map(item => {
-          // For stock items, use the type directly
-          let itemType = "Unknown";
-          let productType = "Unknown";
-          let gsm = 0;
-
-          if (item.stock) {
-            // Stock has a type field
-            itemType = item.stock.type || "Unknown";
-            gsm = item.stock.gsm;
-            
-            // Use the product type directly as provided in the order
-            if (item.type === "Sublimation Paper") {
-              // If no explicit product type is given, try to determine it from characteristics
-              productType = item.product || (item.stock.weight ? "Jumbo Roll" : "Roll");
-            } else {
-              productType = item.type || "Unknown";
-            }
-          } else if (item.divided) {
-            // For divided items, determine type from related properties
-            itemType = "Sublimation Paper"; // Default for divided items
-            
-            // Use the product type directly as provided in the order 
-            productType = item.product || "Roll"; // Default to Roll if not specified
-            
-            // Get GSM directly from the API response using type assertion
-            // @ts-ignore: API adds gsm property
-            gsm = item.gsm || 0;
-            
-            console.log(`Mapped divided item GSM:`, {
-              itemId: item.id,
-              productType,
-              gsm,
-              // @ts-ignore: API adds gsm property
-              fromAPITransform: item.gsm
-            });
-          }
-
-          // Calculate item total with tax
-          const itemPrice = Number(item.price) || 0;
-          const itemQuantity = Number(item.quantity) || 1;
-          const itemTax = Number(item.tax) || 0;
-          const itemTotal = itemPrice * itemQuantity * (1 + (itemTax / 100));
-
-          const mappedItem = {
-            id: item.id,
-            type: itemType,
-            product: productType,
-            price: itemPrice,
-            quantity: itemQuantity,
-            tax: itemTax,
-            gsm: gsm,
-            // Directly use the values from the order item first before falling back to stock/divided
-            width: Number(item.width) || Number(item.stock?.width || item.divided?.width || 0),
-            length: Number(item.length) || Number(item.stock?.length || item.divided?.length || 0),
-            weight: Number(item.weight) || Number(item.stock?.weight || item.divided?.weight || 0),
-            total: itemTotal,
-            stock: item.stock,
-            divided: item.divided
-          };
-
-          console.log('Mapped order item:', {
-            ...mappedItem,
-            originalGSM: {
-              fromStock: item.stock?.gsm,
-              fromDivided: item.divided?.gsm
-            }
-          });
-          return mappedItem;
-        }),
-        totalAmount: invoice.totalAmount,
-        createdAt: new Date(invoice.createdAt)
+        id: latestInvoice.orderId,
+        orderNo: latestInvoice.invoiceNo,
+        customerId: latestInvoice.customerId,
+        orderItems: latestInvoice.orderItems.map((item: any) => ({
+          ...item,
+          // Ensure type, product, gsm are present as string
+          type: item.type || '-',
+          product: item.product || '-',
+          gsm: item.gsm || '',
+        })),
+        totalAmount: latestInvoice.totalAmount,
+        createdAt: new Date(latestInvoice.createdAt),
+        discount: typeof latestInvoice.discount === 'number' ? latestInvoice.discount : 0
       };
       
       console.log('Final PDF generation data:', { 
@@ -448,7 +397,7 @@ function InvoicesPage() {
           product: item.product,
           price: item.price,
           quantity: item.quantity,
-          total: item.total,
+          total: item.price * item.quantity,
           gsm: item.gsm,
           width: item.width,
           length: item.length,
@@ -468,8 +417,16 @@ function InvoicesPage() {
       const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
       
-      // Open the PDF in a new window
-      window.open(url);
+      // Force download the PDF
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${latestInvoice.invoiceNo || 'invoice'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }, 100);
       
       toast({
         title: t('common.success', 'Success'),

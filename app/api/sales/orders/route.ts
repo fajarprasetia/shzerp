@@ -32,6 +32,7 @@ interface CreateOrderRequest {
   }[];
   note?: string;
   totalAmount?: number;
+  discount?: number;
 }
 
 export async function GET() {
@@ -81,6 +82,15 @@ export async function POST(req: Request) {
     if (!body.orderItems || body.orderItems.length === 0) {
       console.error("Order items are missing or empty:", body);
       return NextResponse.json({ error: "Order items are required" }, { status: 400 });
+    }
+    
+    // Validate discount if provided
+    if (body.discount !== undefined && body.discount !== null) {
+      const discount = Number(body.discount);
+      if (isNaN(discount) || discount < 0 || discount > 100) {
+        console.error(`Invalid discount value received: ${body.discount}`);
+        return NextResponse.json({ error: "Discount must be a number between 0 and 100" }, { status: 400 });
+      }
     }
     
     // Validate each order item with detailed logging
@@ -133,6 +143,13 @@ export async function POST(req: Request) {
       console.log(`Calculated fallback totalAmount: ${totalAmount}`);
     }
     
+    // Apply discount if provided
+    if (body.discount) {
+      const discount = Number(body.discount);
+      totalAmount = totalAmount - (totalAmount * (discount / 100));
+      console.log(`Applied discount of ${discount}%, new total: ${totalAmount}`);
+    }
+    
     console.log(`Final totalAmount to be saved: ${totalAmount} (type: ${typeof totalAmount})`);
     
     const orderItems = body.orderItems.map(item => {
@@ -182,6 +199,7 @@ export async function POST(req: Request) {
         orderNo: orderNumber,
         customerId: body.customerId,
         totalAmount,
+        discount: body.discount ? Number(body.discount) : 0,
         note: body.note || "",
         orderItems: {
           create: orderItems.map(item => ({
@@ -234,6 +252,15 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
     
+    // Validate discount if provided
+    if (data.discount !== undefined && data.discount !== null) {
+      const discount = Number(data.discount);
+      if (isNaN(discount) || discount < 0 || discount > 100) {
+        console.error(`Invalid discount value received for update: ${data.discount}`);
+        return NextResponse.json({ error: "Discount must be a number between 0 and 100" }, { status: 400 });
+      }
+    }
+    
     // Use the totalAmount sent by the client, or keep the existing one
     let totalAmount;
     
@@ -249,20 +276,23 @@ export async function PUT(req: Request) {
     } else {
       // Use original amount if not provided
       totalAmount = originalOrder.totalAmount;
-      console.log(`Using original totalAmount: ${totalAmount} (type: ${typeof totalAmount})`);
     }
-    
-    console.log(`Final totalAmount to be saved for update: ${totalAmount} (type: ${typeof totalAmount})`);
-    
-    // Update the order
-    const order = await prisma.order.update({
-      where: {
-        id: data.id
-      },
+
+    // Apply discount if provided
+    if (data.discount !== undefined && data.discount !== null) {
+      const discount = Number(data.discount);
+      totalAmount = totalAmount - (totalAmount * (discount / 100));
+      console.log(`Applied discount of ${discount}%, new total: ${totalAmount}`);
+    }
+
+    // Update order in database
+    const updatedOrder = await prisma.order.update({
+      where: { id: data.id },
       data: {
+        totalAmount,
+        discount: data.discount !== undefined ? Number(data.discount) : originalOrder.discount,
+        note: data.note || originalOrder.note,
         customerId: data.customerId,
-        note: data.note,
-        totalAmount, // Use the client-provided or original total amount
         orderItems: {
           deleteMany: {},
           create: data.orderItems.map((item: any) => ({
@@ -289,20 +319,12 @@ export async function PUT(req: Request) {
     // Don't update inventory at all - inventory will only be updated during shipment process
     // No need to reset or update any inventory fields when editing orders
 
-    return NextResponse.json(order);
+    return NextResponse.json(updatedOrder);
   } catch (error) {
-    console.error('Error updating order:', error);
-    return new NextResponse(
-      JSON.stringify({ 
-        error: "Failed to update order",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      }), 
-      { 
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
+    console.error("Error updating order:", error);
+    return NextResponse.json(
+      { error: "Failed to update order", details: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
     );
   }
 }

@@ -37,6 +37,7 @@ interface Order {
   customerId: string;
   orderItems: OrderItem[];
   totalAmount: number;
+  discount: number;
   createdAt: Date;
 }
 
@@ -266,41 +267,36 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
 
       const product = item.stock || item.divided;
       
-      // Product column (GSM + Type)
-      let gsm = item.gsm?.toString() || "N/A";
-      
-      // Check if GSM is missing
-      if (gsm === "0" || gsm === "N/A") {
-        console.warn(`Item ${item.id} missing GSM value, attempting to get from product`);
-        // Try to get from product as fallback
-        if (product?.gsm) {
-          gsm = product.gsm.toString();
-        }
+      // Produk column: always use item.type, item.product, item.gsm from OrderItem, never show 'Unknown'
+      let produkText = (item.type && item.type !== 'Unknown') ? item.type : '-';
+      if (item.product && item.product !== '-') {
+        produkText += ` ${item.product}`;
       }
-      
-      // Only append 'g' if we have a valid GSM value
-      const gsmDisplay = gsm !== "N/A" && gsm !== "0" ? `${gsm}g` : gsm;
-      doc.text(`${gsmDisplay} ${item.type}`, 22, currentY + 5);
+      const gsmStr = item.gsm ? String(item.gsm) : '';
+      if (gsmStr && gsmStr !== '-' && gsmStr !== 'Unknown' && gsmStr !== '0') {
+        produkText += ` ${gsmStr}gsm`;
+      }
+      doc.text(produkText, 22, currentY + 5);
 
-      // Type column (Width x Length or just Width)
+      // Tipe column (Width x Length or just Width)
       let width = "N/A";
       let length = "";
-      
-      if (item.width) {
+      if (item.width !== undefined && item.width !== null) {
         width = item.width.toString();
-      } else if (product?.width) {
-        width = product.width.toString();
+      } else if (item.stock?.width !== undefined && item.stock?.width !== null) {
+        width = item.stock.width.toString();
+      } else if (item.divided?.width !== undefined && item.divided?.width !== null) {
+        width = item.divided.width.toString();
       }
-
-      // Only add length for products that are NOT Jumbo Roll
       if (item.product !== "Jumbo Roll") {
-        if (item.length) {
+        if (item.length !== undefined && item.length !== null) {
           length = ` x ${item.length}`;
-        } else if (product?.length) {
-          length = ` x ${product.length}`;
+        } else if (item.stock?.length !== undefined && item.stock?.length !== null) {
+          length = ` x ${item.stock.length}`;
+        } else if (item.divided?.length !== undefined && item.divided?.length !== null) {
+          length = ` x ${item.divided.length}`;
         }
       }
-      
       doc.text(`${width}${length}`, 72, currentY + 5);
 
       // Quantity column
@@ -311,20 +307,18 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
       } else {
         qtyText = item.quantity ? `${item.quantity} Roll` : "N/A";
       }
-      doc.text(qtyText, 112, currentY + 5);
+      doc.text(qtyText, 97, currentY + 5);
 
       // Price, Tax, and Amount
-      doc.text(formatCurrency(item.price).replace("Rp", "").trim(), 132, currentY + 5);
-      doc.text(item.tax.toString(), 157, currentY + 5);
-
-      // Calculate and display the total for this item
+      doc.text(formatCurrency(item.price).replace("Rp", "").trim(), 117, currentY + 5);
+      doc.text(item.tax.toString(), 142, currentY + 5);
       const itemTotal = calculateItemTotal(item);
-      doc.text(formatCurrency(itemTotal).replace("Rp", "").trim(), 172, currentY + 5);
+      doc.text(formatCurrency(itemTotal).replace("Rp", "").trim(), 167, currentY + 5);
 
       console.log('Added item to PDF:', {
         position: { x: currentY, y: currentY + 5 },
         text: {
-          product: `${gsmDisplay} ${item.type}`,
+          product: produkText,
           specs: `${width}${length}`,
           quantity: qtyText,
           price: formatCurrency(item.price),
@@ -338,10 +332,10 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
       // Draw vertical lines with adjusted positions
       doc.line(20, currentY, 20, currentY + 6);
       doc.line(70, currentY, 70, currentY + 6);
-      doc.line(110, currentY, 110, currentY + 6);
-      doc.line(130, currentY, 130, currentY + 6);
-      doc.line(155, currentY, 155, currentY + 6);
-      doc.line(170, currentY, 170, currentY + 6);
+      doc.line(95, currentY, 95, currentY + 6);
+      doc.line(115, currentY, 115, currentY + 6);
+      doc.line(140, currentY, 140, currentY + 6);
+      doc.line(165, currentY, 165, currentY + 6);
       doc.line(190, currentY, 190, currentY + 6);
 
       currentY += itemHeight;
@@ -349,18 +343,46 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
       totalTax += (item.price * (item.quantity || 1) * (item.tax / 100));
     });
 
+    // Calculate subtotal as the sum of item totals (including tax)
+    let subtotal = 0;
+    items.forEach((item, itemIndex) => {
+      const itemTotal = calculateItemTotal(item);
+      subtotal += itemTotal;
+    });
+
     // Add totals and warranty info for each invoice section
     currentY += itemHeight;
-    
-    // Draw totals with adjusted positions
     doc.setFont("helvetica", "bold");
-    doc.text("Total:", 157, currentY + 5);
-    doc.setFont("helvetica", "bold");
-    doc.text(formatCurrency(order.totalAmount).replace("Rp", "").trim(), 172, currentY + 5);
+    doc.text("Subtotal:", 142, currentY + 5);
+    doc.text(formatCurrency(subtotal).replace("Rp", "").trim(), 167, currentY + 5);
+
+    // Only show Diskon if discount > 0
+    let finalTotal = subtotal;
+    if (order.discount && Number(order.discount) > 0) {
+      currentY += itemHeight;
+      doc.text("Diskon:", 142, currentY + 5);
+      let diskonValue = 0;
+      if (order.discount > 0 && order.discount < 1) {
+        // If discount is a fraction (e.g., 0.1 for 10%)
+        diskonValue = subtotal * order.discount;
+      } else if (order.discount > 1 && order.discount < 100) {
+        // If discount is a percentage (e.g., 10 for 10%)
+        diskonValue = subtotal * (order.discount / 100);
+      } else {
+        // If discount is a fixed value
+        diskonValue = order.discount;
+      }
+      doc.text(`-${formatCurrency(diskonValue).replace("Rp", "").trim()}`, 167, currentY + 5);
+      finalTotal = subtotal - diskonValue;
+      if (finalTotal < 0) finalTotal = 0;
+    }
+    currentY += itemHeight;
+    doc.text("Total:", 142, currentY + 5);
+    doc.text(formatCurrency(finalTotal).replace("Rp", "").trim(), 167, currentY + 5);
 
     console.log('Added totals:', {
       position: { y: currentY + 5 },
-      total: formatCurrency(order.totalAmount)
+      total: formatCurrency(finalTotal)
     });
 
     // Add warranty information at fixed position from current section bottom
@@ -444,25 +466,25 @@ function addTableHeader(startY: number, doc: jsPDF, pageWidth: number) {
   doc.setDrawColor(0);
   doc.setLineWidth(0.1);
 
-  // Draw table header with wider columns
+  // Adjusted column positions for more space for 'Jumlah (Rp)'
   doc.line(20, startY, 190, startY);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.text("Produk", 22, startY + 5);
-  doc.text("Tipe", 72, startY + 5);
-  doc.text("Qty", 112, startY + 5);
-  doc.text("Harga (Rp)", 132, startY + 5);
-  doc.text("Pajak (%)", 157, startY + 5);
-  doc.text("Jumlah (Rp)", 172, startY + 5);
+  doc.text("Tipe", 72, startY + 5); // Reduced width for Tipe
+  doc.text("Qty", 97, startY + 5);
+  doc.text("Harga (Rp)", 117, startY + 5);
+  doc.text("Pajak (%)", 142, startY + 5);
+  doc.text("Jumlah (Rp)", 167, startY + 5);
   doc.line(20, startY + 6, 190, startY + 6);
 
-  // Vertical lines with adjusted positions
+  // Vertical lines for each column
   doc.line(20, startY, 20, startY + 6);  // Start
   doc.line(70, startY, 70, startY + 6);  // After Produk
-  doc.line(110, startY, 110, startY + 6); // After Tipe
-  doc.line(130, startY, 130, startY + 6); // After Qty
-  doc.line(155, startY, 155, startY + 6); // After Harga
-  doc.line(170, startY, 170, startY + 6); // After Pajak
+  doc.line(95, startY, 95, startY + 6);  // After Tipe
+  doc.line(115, startY, 115, startY + 6); // After Qty
+  doc.line(140, startY, 140, startY + 6); // After Harga
+  doc.line(165, startY, 165, startY + 6); // After Pajak
   doc.line(190, startY, 190, startY + 6); // End
 
   return startY + 6;

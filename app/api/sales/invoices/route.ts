@@ -68,47 +68,18 @@ export async function GET(request: Request) {
       const transformedInvoices = invoices.map(invoice => {
         // Prepare order items with proper type information
         const orderItems = invoice.order?.orderItems.map(item => {
-          // For stocks, use the type field if available
-          const stockType = item.stock?.type;
-          let gsm = item.stock?.gsm;
-          
-          // Preserve the original item properties
-          const { id, price, quantity, tax, width, length, weight, product } = item;
-          
-          // For divided items
-          if (item.divided) {
-            // For divided items, always use "Sublimation Paper" type
-            // and get GSM from the parent stock
-            gsm = item.divided.stock?.gsm;
-            console.log(`Divided item ${item.id} GSM from parent stock:`, gsm);
-            
-            return {
-              id, price, quantity, tax, 
-              // Prioritize order's width/length over divided item's values
-              width: width || item.divided.width,
-              length: length || item.divided.length,
-              weight: weight || item.divided.weight,
-              // Preserve the product field from the original order
-              product: product || "Roll",
-              type: "Sublimation Paper",
-              gsm: gsm || 0, // Add GSM directly on the item
-              stock: item.divided.stock // Include the parent stock data
-            };
-          }
-          
+          // Always use type, product, gsm from OrderItem table
+          const { id, price, quantity, tax, width, length, weight, product, type, gsm } = item;
           return {
             id, price, quantity, tax,
-            // Prioritize order's width/length over stock's values
-            width: width || item.stock?.width,
-            length: length || item.stock?.length,
-            weight: weight || item.stock?.weight,
-            // Preserve the product field from the original order
-            product: product || (item.stock?.weight ? "Jumbo Roll" : "Roll"),
-            type: stockType || "Sublimation Paper",
-            gsm: gsm || 0, // Add GSM directly on the item
+            width,
+            length,
+            weight,
+            product,
+            type,
+            gsm
           };
         }) || [];
-        
         return {
           ...invoice,
           orderItems: orderItems,

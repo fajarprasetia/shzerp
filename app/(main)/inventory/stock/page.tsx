@@ -29,6 +29,8 @@ import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "react-i18next";
 // Import pre-initialized i18n instance
 import i18nInstance from "@/app/i18n";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 
 export default withPermission(StockPage, "inventory", "read");
 
@@ -45,7 +47,54 @@ function StockPage() {
   const [mounted, setMounted] = useState(false);
 
   // Memoize the columns to avoid re-creation on each render
-  const columns = useMemo(() => getColumns(t), [t]);
+  const columns = useMemo(() =>
+    getColumns(t, (stock) => (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => handlePrintLabel([stock.id])}
+        >
+          <Printer className="h-4 w-4" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="h-8 w-8 p-0">
+              <span className="sr-only">Open menu</span>
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => {
+                setShowForm(true);
+                setSelectedStock(stock);
+              }}
+            >
+              {t('common.edit', 'Edit')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => handlePrintLabel([stock.id])}
+            >
+              {t('inventory.stock.printLabel', 'Print Label')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-red-600"
+              onClick={() => handleDelete([stock.id])}
+            >
+              {t('common.delete', 'Delete')}
+            </DropdownMenuItem>
+            {/* Only show for available stock */}
+            {!stock.isSold && (
+              <DropdownMenuItem asChild>
+                <UpdateRemainingPopover stockId={stock.id} currentValue={stock.remainingLength} onUpdated={mutate} />
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    ))
+  , [t, handlePrintLabel, handleDelete, mutate]);
 
   // Effect to handle mounting and debug i18n state
   useEffect(() => {
@@ -304,12 +353,13 @@ function StockPage() {
       id: "actions",
       enableSorting: false,
       cell: ({ row }) => {
+        const stock = row.original;
         return (
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => handlePrintLabel([row.original.id])}
+              onClick={() => handlePrintLabel([stock.id])}
             >
               <Printer className="h-4 w-4" />
             </Button>
@@ -324,22 +374,28 @@ function StockPage() {
                 <DropdownMenuItem
                   onClick={() => {
                     setShowForm(true);
-                    setSelectedStock(row.original);
+                    setSelectedStock(stock);
                   }}
                 >
                   {t('common.edit', 'Edit')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => handlePrintLabel([row.original.id])}
+                  onClick={() => handlePrintLabel([stock.id])}
                 >
                   {t('inventory.stock.printLabel', 'Print Label')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-red-600"
-                  onClick={() => handleDelete([row.original.id])}
+                  onClick={() => handleDelete([stock.id])}
                 >
                   {t('common.delete', 'Delete')}
                 </DropdownMenuItem>
+                {/* Only show for available stock */}
+                {!stock.isSold && (
+                  <DropdownMenuItem asChild>
+                    <UpdateRemainingPopover stockId={stock.id} currentValue={stock.remainingLength} onUpdated={mutate} />
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -415,5 +471,56 @@ function StockPage() {
         </Tabs>
       )}
     </div>
+  );
+}
+
+// Add UpdateRemainingPopover component
+function UpdateRemainingPopover({ stockId, currentValue, onUpdated }: { stockId: string; currentValue: number; onUpdated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(currentValue);
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+
+  async function handleUpdate() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/inventory/stock/${stockId}/remaining-length`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remainingLength: value }),
+      });
+      if (!res.ok) throw new Error("Failed to update remaining length");
+      toast({ title: "Success", description: "Remaining length updated." });
+      setOpen(false);
+      onUpdated();
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to update remaining length", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon"><span className="sr-only">Update Remaining</span>✏️</Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="remainingLength">New Remaining Length (m):</label>
+          <Input
+            id="remainingLength"
+            type="number"
+            min={0}
+            value={value}
+            onChange={e => setValue(Number(e.target.value))}
+            disabled={loading}
+          />
+          <Button onClick={handleUpdate} disabled={loading || value < 0} className="mt-2 w-full">
+            {loading ? "Updating..." : "Update"}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 } 

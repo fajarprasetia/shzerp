@@ -2,7 +2,16 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 function generateDividedRollNo(parentRollNo: string, index: number) {
-  return `${parentRollNo}${String.fromCharCode(65 + index)}`;
+  // Convert number to base-26 (A-Z) string
+  let result = '';
+  let num = index;
+  
+  while (num >= 0) {
+    result = String.fromCharCode(65 + (num % 26)) + result;
+    num = Math.floor(num / 26) - 1;
+  }
+  
+  return `${parentRollNo}${result}`;
 }
 
 export async function POST(request: Request) {
@@ -34,6 +43,11 @@ export async function POST(request: Request) {
 
     console.log("Found parent stock:", parentStock);
 
+    // Find the current count of divided rolls for this parent jumbo roll
+    const existingDividedCount = await prisma.divided.count({
+      where: { stockId: parentStock.id },
+    });
+
     // Validate total length
     const totalLength = length * count;
     if (totalLength > parentStock.remainingLength) {
@@ -49,7 +63,7 @@ export async function POST(request: Request) {
 
       // Create divided stocks
       for (let i = 0; i < count; i++) {
-        const rollNo = generateDividedRollNo(parentStock.jumboRollNo, i);
+        const rollNo = generateDividedRollNo(parentStock.jumboRollNo, existingDividedCount + i);
         console.log("Creating divided stock with roll number:", rollNo);
         
         const divided = await tx.divided.create({

@@ -123,19 +123,19 @@ export async function POST(request: Request) {
       },
     });
 
-    // Process each scanned item to update inventory
+    // Use Sets to avoid duplicate updates for stock and divided items
+    const updatedStockIds = new Set<string>();
+    const updatedDividedIds = new Set<string>();
+
     for (const item of itemsToProcess) {
+      if (item.stockId && !updatedStockIds.has(item.stockId)) {
       // Find the original order item to get quantity
       const orderItem = orderItems.find(oi => oi.id === item.orderItemId);
       const quantity = orderItem ? Number(orderItem.quantity) || 0 : 0;
-      
-      // Process stock items
-      if (item.stockId) {
         // Check if stock exists and is not already sold
         const stock = await prisma.stock.findUnique({
           where: { id: item.stockId }
         });
-        
         if (stock && !stock.isSold) {
           await prisma.stock.update({
             where: { id: item.stockId },
@@ -149,19 +149,20 @@ export async function POST(request: Request) {
               }
             },
           });
+          updatedStockIds.add(item.stockId);
           console.log(`Completed shipment: Marked stock ${item.stockId} as sold for order ${order.orderNo}`);
         } else {
           console.warn(`Stock item ${item.stockId} not found or already sold, skipping`);
         }
       }
-      
-      // Process divided items
-      if (item.dividedId) {
+      if (item.dividedId && !updatedDividedIds.has(item.dividedId)) {
+        // Find the original order item to get quantity
+        const orderItem = orderItems.find(oi => oi.id === item.orderItemId);
+        const quantity = orderItem ? Number(orderItem.quantity) || 0 : 0;
         // Check if divided item exists and is not already sold
         const divided = await prisma.divided.findUnique({
           where: { id: item.dividedId }
         });
-        
         if (divided && !divided.isSold) {
           await prisma.divided.update({
             where: { id: item.dividedId },
@@ -175,12 +176,15 @@ export async function POST(request: Request) {
               }
             },
           });
+          updatedDividedIds.add(item.dividedId);
           console.log(`Completed shipment: Marked divided stock ${item.dividedId} as sold for order ${order.orderNo}`);
         } else {
           console.warn(`Divided item ${item.dividedId} not found or already sold, skipping`);
         }
       }
     }
+    console.log(`Updated dividedIds:`, Array.from(updatedDividedIds));
+    console.log(`Updated stockIds:`, Array.from(updatedStockIds));
 
     return NextResponse.json({
       success: true,

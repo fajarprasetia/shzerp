@@ -84,6 +84,8 @@ interface FormValues {
   customerId: string;
   orderItems: OrderItem[];
   note: string;
+  discount: number;
+  discountType: "percentage" | "value";
 }
 
 const orderItemSchema = z.object({
@@ -103,6 +105,8 @@ const formSchema = z.object({
   customerId: z.string().min(1, "Customer is required"),
   orderItems: z.array(orderItemSchema).min(1, "At least one item is required"),
   note: z.string().optional(),
+  discount: z.number().min(0, "Discount must be greater than or equal to 0").default(0),
+  discountType: z.enum(["percentage", "value"]).default("percentage"),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -117,6 +121,8 @@ const defaultValues: FormValues = {
     quantity: 1
   }],
   note: "",
+  discount: 0,
+  discountType: "percentage",
 };
 
 // Add this type for better type safety
@@ -135,8 +141,8 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount);
 }
 
@@ -174,6 +180,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         },
       ],
       note: initialData?.note || "",
+      discount: initialData?.discount || 0,
+      discountType: initialData?.discountType || "percentage",
     },
   });
 
@@ -273,14 +281,14 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
   // Update calculateOrderTotal to use the inner calculateItemTotal
   const calculateOrderTotal = () => {
     const items = form.getValues("orderItems") || [];
-    console.log('Calculating total for items:', items);
+    const discount = form.getValues("discount") || 0;
+    const discountType = form.getValues("discountType") || "percentage";
 
     let totalSum = 0;
     const itemDetails = items.map(item => {
       const itemTotal = calculateItemTotal(item);
       totalSum += itemTotal;
       
-      // Create detailed calculation info for logging
       return {
         type: item.type,
         product: item.product,
@@ -292,10 +300,18 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       };
     });
     
-    console.log('Item-by-item calculation details:', itemDetails);
-    console.log('Final calculated total:', totalSum);
+    let discountedTotal = totalSum;
+    if (discountType === "percentage") {
+      discountedTotal = totalSum - (totalSum * (discount / 100));
+    } else {
+      discountedTotal = totalSum - discount;
+    }
+    if (discountedTotal < 0) discountedTotal = 0;
     
-    return totalSum;
+    console.log('Item-by-item calculation details:', itemDetails);
+    console.log('Final calculated total:', discountedTotal);
+    
+    return Number(discountedTotal.toFixed(2));
   };
 
   const getAvailableGSM = (type: string, product?: string) => {
@@ -572,7 +588,9 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         customerId: data.customerId,
         orderItems,
         note: data.note || "",
-        totalAmount: Math.round(totalAmount * 100) / 100, // Round to 2 decimal places
+        totalAmount: Number(totalAmount.toFixed(2)),
+        discount: data.discount,
+        discountType: data.discountType,
       };
 
       console.log('Final submission data:', submissionData);
@@ -1168,9 +1186,13 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                           <Input
                   type="number"
                                   min="0"
-                                  step="1"
+                            step="0.01"
                             {...field}
-                                  onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                            value={field.value !== undefined && field.value !== null ? Number(field.value).toFixed(2) : ''}
+                            onChange={e => {
+                              const value = parseFloat(e.target.value);
+                              field.onChange(isNaN(value) ? 0 : parseFloat(value.toFixed(2)));
+                            }}
                           />
                         </FormControl>
                         <FormMessage />
@@ -1205,6 +1227,52 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
               </div>
             ))}
         </div>
+
+          {/* Add this before the Order Total section */}
+          <div className="flex justify-end space-x-4 pt-4 border-t">
+            <div className="flex items-center gap-4">
+              <FormField
+                control={form.control}
+                name="discountType"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2">
+                    <FormLabel>Discount Type:</FormLabel>
+                    <FormControl>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger className="w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="percentage">Percentage (%)</SelectItem>
+                          <SelectItem value="value">Value (Rp)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="discount"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2">
+                    <FormLabel>Discount{form.watch("discountType") === "percentage" ? " (%)" : " (Rp)"}:</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="w-20"
+                        {...field}
+                        onChange={e => field.onChange(parseFloat(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
 
           {/* Order Total */}
           <div className="flex justify-end space-x-4 pt-4 border-t">

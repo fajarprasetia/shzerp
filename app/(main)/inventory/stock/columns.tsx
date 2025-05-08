@@ -18,7 +18,10 @@ declare module "@/hooks/use-stock-data" {
 
 // Create a function that returns the columns with translations
 // Accept t function as parameter instead of calling useTranslation inside
-export const getColumns = (t: TFunction): ColumnDef<StockWithInspector>[] => {
+export const getColumns = (
+  t: TFunction,
+  renderActions?: (row: StockWithInspector) => React.ReactNode
+): ColumnDef<StockWithInspector>[] => {
   return [
     {
       id: "select",
@@ -99,6 +102,13 @@ export const getColumns = (t: TFunction): ColumnDef<StockWithInspector>[] => {
         // Handle the case when inspector might not exist
         return row.original.inspector?.name || "-";
       },
+    },
+    {
+      id: "actions",
+      header: t('common.actions', 'Actions'),
+      cell: ({ row }) => renderActions ? renderActions(row.original) : <div>Actions</div>,
+      enableSorting: false,
+      enableHiding: false,
     },
   ];
 }; 
