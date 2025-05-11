@@ -65,4 +65,56 @@ export async function GET() {
       { status: 500 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { customerId, orderItems, note, totalAmount, discount } = body;
+
+    // Validate required fields
+    if (!customerId) {
+      return NextResponse.json({ error: "Customer ID is required" }, { status: 400 });
+    }
+
+    if (!orderItems || !Array.isArray(orderItems) || orderItems.length === 0) {
+      return NextResponse.json({ error: "At least one order item is required" }, { status: 400 });
+    }
+
+    // Create the order with its items
+    const order = await prisma.order.create({
+      data: {
+        customerId,
+        note,
+        totalAmount,
+        discount: discount || 0,
+        orderItems: {
+          create: orderItems.map(item => ({
+            type: item.type,
+            product: item.product,
+            gsm: item.gsm,
+            width: item.width,
+            length: item.length,
+            weight: item.weight,
+            quantity: item.quantity,
+            price: item.price,
+            tax: item.tax,
+            stockId: item.productId, // Map productId back to stockId for the database
+          })),
+        },
+      },
+      include: {
+        customer: true,
+        orderItems: true,
+      },
+    });
+
+    return NextResponse.json(order);
+  } catch (error) {
+    console.error("Error creating order:", error);
+    return NextResponse.json(
+      { error: "Error creating order", details: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
 } 

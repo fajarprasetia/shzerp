@@ -117,6 +117,8 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
     id: order.id,
     orderNo: order.orderNo,
     customerId: order.customerId,
+    discount: order.discount,
+    totalAmount: order.totalAmount,
     itemCount: Array.isArray(order.orderItems) ? order.orderItems.length : 'not an array',
     items: Array.isArray(order.orderItems) ? order.orderItems.map(item => ({
       id: item.id,
@@ -355,34 +357,19 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
     doc.setFont("helvetica", "bold");
     doc.text("Subtotal:", 142, currentY + 5);
     doc.text(formatCurrency(subtotal).replace("Rp", "").trim(), 167, currentY + 5);
-
+    
     // Only show Diskon if discount > 0
-    let finalTotal = subtotal;
-    if (order.discount && Number(order.discount) > 0) {
-      currentY += itemHeight;
-      doc.text("Diskon:", 142, currentY + 5);
-      let diskonValue = 0;
-      if (order.discount > 0 && order.discount < 1) {
-        // If discount is a fraction (e.g., 0.1 for 10%)
-        diskonValue = subtotal * order.discount;
-      } else if (order.discount > 1 && order.discount < 100) {
-        // If discount is a percentage (e.g., 10 for 10%)
-        diskonValue = subtotal * (order.discount / 100);
-      } else {
-        // If discount is a fixed value
-        diskonValue = order.discount;
-      }
-      doc.text(`-${formatCurrency(diskonValue).replace("Rp", "").trim()}`, 167, currentY + 5);
-      finalTotal = subtotal - diskonValue;
-      if (finalTotal < 0) finalTotal = 0;
-    }
+    currentY += itemHeight;
+    doc.text("Diskon:", 142, currentY + 5);
+    doc.text(formatCurrency(order.totalAmount - subtotal).replace("Rp", "").trim(), 167, currentY + 5);
+    
     currentY += itemHeight;
     doc.text("Total:", 142, currentY + 5);
-    doc.text(formatCurrency(finalTotal).replace("Rp", "").trim(), 167, currentY + 5);
+    doc.text(formatCurrency(order.totalAmount).replace("Rp", "").trim(), 167, currentY + 5);
 
     console.log('Added totals:', {
       position: { y: currentY + 5 },
-      total: formatCurrency(finalTotal)
+      total: formatCurrency(order.totalAmount)
     });
 
     // Add warranty information at fixed position from current section bottom

@@ -77,7 +77,9 @@ export async function GET(request: Request) {
             weight,
             product,
             type,
-            gsm
+            gsm,
+            discount: invoice.order?.discount,
+            totalAmount: invoice.order?.totalAmount
           };
         }) || [];
         return {

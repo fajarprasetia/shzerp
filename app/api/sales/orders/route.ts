@@ -33,6 +33,7 @@ interface CreateOrderRequest {
   note?: string;
   totalAmount?: number;
   discount?: number;
+  discountType?: "percentage" | "value";
 }
 
 export async function GET() {
@@ -87,9 +88,16 @@ export async function POST(req: Request) {
     // Validate discount if provided
     if (body.discount !== undefined && body.discount !== null) {
       const discount = Number(body.discount);
-      if (isNaN(discount) || discount < 0 || discount > 100) {
+      
+      if (isNaN(discount) || discount < 0) {
         console.error(`Invalid discount value received: ${body.discount}`);
-        return NextResponse.json({ error: "Discount must be a number between 0 and 100" }, { status: 400 });
+        return NextResponse.json({ error: "Discount must be a non-negative number" }, { status: 400 });
+      }
+      
+      // Additional validation for percentage discounts
+      if (body.discountType !== "value" && discount > 100) {
+        console.error(`Invalid percentage discount received: ${body.discount}`);
+        return NextResponse.json({ error: "Percentage discount cannot exceed 100%" }, { status: 400 });
       }
     }
     
@@ -146,8 +154,20 @@ export async function POST(req: Request) {
     // Apply discount if provided
     if (body.discount) {
       const discount = Number(body.discount);
-      totalAmount = totalAmount - (totalAmount * (discount / 100));
-      console.log(`Applied discount of ${discount}%, new total: ${totalAmount}`);
+      
+      // Apply discount based on the discount type
+      if (body.discountType === "value") {
+        // Value-based discount: directly subtract the amount
+        totalAmount = totalAmount - discount;
+        console.log(`Applied value discount of ${discount}, new total: ${totalAmount}`);
+      } else {
+        // Percentage-based discount (default)
+        totalAmount = totalAmount - (totalAmount * (discount / 100));
+        console.log(`Applied percentage discount of ${discount}%, new total: ${totalAmount}`);
+      }
+      
+      // Ensure total amount is not negative
+      if (totalAmount < 0) totalAmount = 0;
     }
     
     console.log(`Final totalAmount to be saved: ${totalAmount} (type: ${typeof totalAmount})`);
@@ -200,6 +220,7 @@ export async function POST(req: Request) {
         customerId: body.customerId,
         totalAmount,
         discount: body.discount ? Number(body.discount) : 0,
+        discountType: body.discountType || "percentage",
         note: body.note || "",
         orderItems: {
           create: orderItems.map(item => ({
@@ -255,9 +276,16 @@ export async function PUT(req: Request) {
     // Validate discount if provided
     if (data.discount !== undefined && data.discount !== null) {
       const discount = Number(data.discount);
-      if (isNaN(discount) || discount < 0 || discount > 100) {
+      
+      if (isNaN(discount) || discount < 0) {
         console.error(`Invalid discount value received for update: ${data.discount}`);
-        return NextResponse.json({ error: "Discount must be a number between 0 and 100" }, { status: 400 });
+        return NextResponse.json({ error: "Discount must be a non-negative number" }, { status: 400 });
+      }
+      
+      // Additional validation for percentage discounts
+      if (data.discountType !== "value" && discount > 100) {
+        console.error(`Invalid percentage discount received for update: ${data.discount}`);
+        return NextResponse.json({ error: "Percentage discount cannot exceed 100%" }, { status: 400 });
       }
     }
     
@@ -281,8 +309,20 @@ export async function PUT(req: Request) {
     // Apply discount if provided
     if (data.discount !== undefined && data.discount !== null) {
       const discount = Number(data.discount);
-      totalAmount = totalAmount - (totalAmount * (discount / 100));
-      console.log(`Applied discount of ${discount}%, new total: ${totalAmount}`);
+      
+      // Apply discount based on the discount type
+      if (data.discountType === "value") {
+        // Value-based discount: directly subtract the amount
+        totalAmount = totalAmount - discount;
+        console.log(`Applied value discount of ${discount}, new total: ${totalAmount}`);
+      } else {
+        // Percentage-based discount (default)
+        totalAmount = totalAmount - (totalAmount * (discount / 100));
+        console.log(`Applied percentage discount of ${discount}%, new total: ${totalAmount}`);
+      }
+      
+      // Ensure total amount is not negative
+      if (totalAmount < 0) totalAmount = 0;
     }
 
     // Update order in database
@@ -291,6 +331,7 @@ export async function PUT(req: Request) {
       data: {
         totalAmount,
         discount: data.discount !== undefined ? Number(data.discount) : originalOrder.discount,
+        discountType: data.discountType || originalOrder.discountType || "percentage",
         note: data.note || originalOrder.note,
         customerId: data.customerId,
         orderItems: {

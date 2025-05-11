@@ -183,6 +183,7 @@ model Order {
   customer    Customer    @relation(fields: [customerId], references: [id])
   totalAmount Float       @default(0)
   discount    Float       @default(0)
+  discountType String     @default("percentage")
   orderItems  OrderItem[]
   note        String?
   status      String      @default("PENDING") // PENDING, SHIPPED, CANCELLED

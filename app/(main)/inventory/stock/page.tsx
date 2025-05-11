@@ -46,6 +46,97 @@ function StockPage() {
   const { t, i18n } = useTranslation(undefined, { i18n: i18nInstance });
   const [mounted, setMounted] = useState(false);
 
+  // Move handlePrintLabel here so it is defined before useMemo and all usages
+  const handlePrintLabel = async (ids: string[]) => {
+    const stocks = data?.filter((stock: StockWithInspector) => ids.includes(stock.id));
+    if (!stocks?.length) return;
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: [50, 25],
+    });
+
+    for (let i = 0; i < stocks.length; i++) {
+      const stock = stocks[i];
+      if (i > 0) {
+        doc.addPage([50, 25], "landscape");
+      }
+
+      // Generate barcode image
+      const barcodeImage = await new Promise<string>((resolve) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+        canvas.width = 700;
+        canvas.height = 500;
+
+        // Use CODE128 format for barcodes - make it wider and taller
+        JsBarcode(canvas, stock.barcodeId, {
+          format: "CODE128",
+          width: 3,             // Wider bars
+          height: 50,           // Taller bars
+          displayValue: false,   // Show the barcode value
+          fontSize: 0,         // Larger font size
+          font: 'Arial',
+          textMargin: 0,
+          margin: 0
+        });
+
+        resolve(canvas.toDataURL('image/png'));
+      });
+      
+      // Adjust barcode text placement to appear above barcode
+      doc.setFontSize(8);
+      doc.text(stock.barcodeId, 25, 3, { align: 'center' }); // Positioned above barcode
+
+      // Add barcode image below the text
+      doc.addImage(barcodeImage, 'PNG', 2, 4, 46, 10);
+
+      // Add text information below barcode
+      doc.setFontSize(8);
+      const textStartY = 18; // Improved spacing for better alignment
+      doc.text(`${t('inventory.stock.type', 'Type')}: ${stock.type}`, 2, textStartY);
+      doc.text(`${t('inventory.stock.gsm', 'GSM')}: ${stock.gsm}`, 2, textStartY + 3);
+      doc.text(`${t('inventory.stock.size', 'Size')}: ${stock.width}x${stock.length}mm`, 2, textStartY + 6);
+          }
+
+    doc.save("stock-labels.pdf");
+  };
+
+  // Move handleDelete here so it is defined before useMemo and all usages
+  const handleDelete = async (ids: string[]) => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch("/api/inventory/stock", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ids }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete stock");
+      }
+
+      mutate();
+      setSelectedRows([]);
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('inventory.stock.deleteSuccess', 'Selected stock items have been deleted.'),
+      });
+    } catch (error) {
+      console.error("Error deleting stock:", error);
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('inventory.stock.deleteError', 'Failed to delete stock items. Please try again.'),
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Memoize the columns to avoid re-creation on each render
   const columns = useMemo(() =>
     getColumns(t, (stock) => (
@@ -126,283 +217,6 @@ function StockPage() {
   const handleCancel = () => {
     setShowForm(false);
   };
-
-  const handleDelete = async (ids: string[]) => {
-    setIsDeleting(true);
-    try {
-      const response = await fetch("/api/inventory/stock", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ids }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to delete stock");
-      }
-
-      mutate();
-      setSelectedRows([]);
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('inventory.stock.deleteSuccess', 'Selected stock items have been deleted.'),
-      });
-    } catch (error) {
-      console.error("Error deleting stock:", error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('inventory.stock.deleteError', 'Failed to delete stock items. Please try again.'),
-        variant: "destructive",
-      });
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handlePrintLabel = async (ids: string[]) => {
-    const stocks = data?.filter((stock: StockWithInspector) => ids.includes(stock.id));
-    if (!stocks?.length) return;
-
-    const doc = new jsPDF({
-      orientation: "landscape",
-      unit: "mm",
-      format: [50, 25],
-    });
-
-    for (let i = 0; i < stocks.length; i++) {
-      const stock = stocks[i];
-      if (i > 0) {
-        doc.addPage([50, 25], "landscape");
-      }
-
-      // Generate barcode image
-      const barcodeImage = await new Promise<string>((resolve) => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
-        canvas.width = 700;
-        canvas.height = 500;
-
-        // Use CODE128 format for barcodes - make it wider and taller
-        JsBarcode(canvas, stock.barcodeId, {
-          format: "CODE128",
-          width: 3,             // Wider bars
-          height: 50,           // Taller bars
-          displayValue: false,   // Show the barcode value
-          fontSize: 0,         // Larger font size
-          font: 'Arial',
-          textMargin: 0,
-          margin: 0
-        });
-
-        resolve(canvas.toDataURL('image/png'));
-      });
-
-      // Add barcode image - make it take up more space now that QR is removed
-      doc.addImage(barcodeImage, 'PNG', 2, 2, 46, 13);
-
-      // Add text information below barcode
-      doc.setFontSize(8); // Slightly larger text
-      doc.text(`${t('inventory.stock.type', 'Type')}: ${stock.type}`, 2, 18);
-      doc.text(`${t('inventory.stock.gsm', 'GSM')}: ${stock.gsm}`, 2, 21);
-      doc.text(`${t('inventory.stock.size', 'Size')}: ${stock.width}x${stock.length}mm`, 2, 24);
-    }
-
-    doc.save("stock-labels.pdf");
-  };
-
-  // Add a column for "Status" that shows "Sold" or "Available"
-  const stockColumns: ColumnDef<StockWithInspector>[] = [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <input
-          type="checkbox"
-          checked={table.getIsAllPageRowsSelected()}
-          onChange={(e) => {
-            table.toggleAllPageRowsSelected(e.target.checked);
-            const ids = e.target.checked
-              ? table.getRowModel().rows.map((row) => row.original.id)
-              : [];
-            setSelectedRows(ids);
-          }}
-        />
-      ),
-      cell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={row.getIsSelected()}
-          onChange={(e) => {
-            row.toggleSelected(e.target.checked);
-            setSelectedRows((prev) =>
-              e.target.checked
-                ? [...prev, row.original.id]
-                : prev.filter((id) => id !== row.original.id)
-            );
-          }}
-        />
-      ),
-    },
-    {
-      accessorKey: "jumboRollNo",
-      header: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.'),
-      sortingFn: "alphanumeric",
-      enableSorting: true,
-    },
-    {
-      accessorKey: "barcodeId",
-      header: t('inventory.stock.barcodeId', 'Barcode ID'),
-      sortingFn: "alphanumeric",
-      enableSorting: true,
-    },
-    {
-      accessorKey: "type",
-      header: t('inventory.stock.type', 'Type'),
-      sortingFn: "alphanumeric",
-      enableSorting: true,
-    },
-    {
-      accessorKey: "gsm",
-      header: t('inventory.stock.gsm', 'GSM'),
-      sortingFn: "basic",
-      enableSorting: true,
-    },
-    {
-      accessorKey: "width",
-      header: t('inventory.stock.width', 'Width'),
-      sortingFn: "basic",
-      enableSorting: true,
-    },
-    {
-      accessorKey: "length",
-      header: t('inventory.stock.length', 'Length'),
-      sortingFn: "basic",
-      enableSorting: true,
-    },
-    {
-      accessorKey: "remainingLength",
-      header: t('inventory.stock.remainingLength', 'Remaining Length'),
-      sortingFn: "basic",
-      enableSorting: true,
-      cell: ({ row }) => {
-        const remainingLength = row.original.remainingLength || 0;
-        
-        if (remainingLength === 0) {
-          return (
-            <div className="text-red-500 font-medium">
-              {remainingLength}m
-            </div>
-          );
-        }
-        
-        if (remainingLength < 50) {
-          return (
-            <div className="flex items-center">
-              <span>{remainingLength}m</span>
-              <Badge variant="destructive" className="ml-2 text-xs">{t('inventory.stock.low', 'Low')}</Badge>
-            </div>
-          );
-        }
-        
-        return <div>{remainingLength}m</div>;
-      },
-    },
-    {
-      accessorKey: "weight",
-      header: t('inventory.stock.weight', 'Weight'),
-      sortingFn: "basic",
-      enableSorting: true,
-    },
-    {
-      accessorKey: "containerNo",
-      header: t('inventory.stock.containerNo', 'Container No.'),
-      sortingFn: "alphanumeric",
-      enableSorting: true,
-    },
-    {
-      accessorKey: "arrivalDate",
-      header: t('inventory.stock.arrivalDate', 'Arrival Date'),
-      sortingFn: "datetime",
-      enableSorting: true,
-      cell: ({ row }) => format(new Date(row.original.arrivalDate), "PPP"),
-    },
-    {
-      accessorKey: "inspector",
-      header: t('inventory.stock.inspectedBy', 'Inspected by'),
-      sortingFn: "alphanumeric",
-      enableSorting: true,
-      cell: ({ row }) => row.original.inspector?.name || "-",
-    },
-    // Add order information for sold stock
-    {
-      accessorKey: "orderDetails",
-      header: t('inventory.stock.orderInfo', 'Order Info'),
-      enableSorting: false,
-      cell: ({ row }) => {
-        const stock = row.original;
-        return stock.isSold && stock.orderNo ? (
-          <div className="text-xs">
-            <div>{t('inventory.stock.order', 'Order')}: {stock.orderNo}</div>
-            <div>{t('inventory.stock.date', 'Date')}: {stock.soldDate ? format(new Date(stock.soldDate), "PPP") : "-"}</div>
-            <div>{t('inventory.stock.customer', 'Customer')}: {stock.customerName || "-"}</div>
-          </div>
-        ) : "-";
-      },
-    },
-    {
-      id: "actions",
-      enableSorting: false,
-      cell: ({ row }) => {
-        const stock = row.original;
-        return (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => handlePrintLabel([stock.id])}
-            >
-              <Printer className="h-4 w-4" />
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                  <span className="sr-only">Open menu</span>
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => {
-                    setShowForm(true);
-                    setSelectedStock(stock);
-                  }}
-                >
-                  {t('common.edit', 'Edit')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => handlePrintLabel([stock.id])}
-                >
-                  {t('inventory.stock.printLabel', 'Print Label')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-red-600"
-                  onClick={() => handleDelete([stock.id])}
-                >
-                  {t('common.delete', 'Delete')}
-                </DropdownMenuItem>
-                {/* Only show for available stock */}
-                {!stock.isSold && (
-                  <DropdownMenuItem asChild>
-                    <UpdateRemainingPopover stockId={stock.id} currentValue={stock.remainingLength} onUpdated={mutate} />
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        );
-      },
-    },
-  ];
 
   // Return a loading placeholder while mounting to avoid hydration issues
   if (!mounted || isLoading) {

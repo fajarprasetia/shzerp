@@ -1,5 +1,5 @@
 'use client';
-
+import { use } from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -66,7 +66,8 @@ interface OrderDetail {
   note?: string;
 }
 
-export default function ShipmentProcessPage({ params }: { params: { id: string } }) {
+export default function ShipmentProcessPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
@@ -82,7 +83,7 @@ export default function ShipmentProcessPage({ params }: { params: { id: string }
 
   useEffect(() => {
     fetchOrderDetails();
-  }, [params.id]);
+  }, [id]);
 
   useEffect(() => {
     if (order) {

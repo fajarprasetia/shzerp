@@ -57,21 +57,8 @@ interface StockWithQuantity extends Stock {
   remainingLength: number;
 }
 
-interface DividedWithGSM extends Omit<Divided, 'stock'> {
-  stock?: {
+interface DividedWithGSM extends Divided {
   gsm: number;
-    type: string;
-    id: string;
-  };
-  gsm?: number; // Added by API or hook for compatibility
-  stockId: string; // This is what actually exists in Divided model
-}
-
-// Add the OrderWithCustomer type
-interface OrderWithCustomer extends Omit<Order, 'discountType'> {
-  customer: Customer;
-  orderItems: PrismaOrderItem[];
-  discountType: "percentage" | "value";
 }
 
 interface OrderFormProps {
@@ -93,6 +80,12 @@ interface OrderItem {
   stockId?: string;
 }
 
+interface FormValues {
+  customerId: string;
+  orderItems: OrderItem[];
+  note: string;
+}
+
 const orderItemSchema = z.object({
   type: z.enum(productTypes),
   product: z.enum(sublimationProducts).optional(),
@@ -110,17 +103,6 @@ const formSchema = z.object({
   customerId: z.string().min(1, "Customer is required"),
   orderItems: z.array(orderItemSchema).min(1, "At least one item is required"),
   note: z.string().optional(),
-  discount: z.number().min(0, "Discount must be greater than or equal to 0").default(0),
-  discountType: z.enum(["percentage", "value"]).default("percentage"),
-}).refine((data) => {
-  // When discount type is percentage, value must be between 0 and 100
-  if (data.discountType === "percentage") {
-    return data.discount <= 100;
-  }
-  return true;
-}, {
-  message: "Percentage discount cannot exceed 100%",
-  path: ["discount"], // Path to the field with the error
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -135,8 +117,6 @@ const defaultValues: FormValues = {
     quantity: 1
   }],
   note: "",
-  discount: 0,
-  discountType: "percentage",
 };
 
 // Add this type for better type safety
@@ -155,8 +135,8 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(amount);
 }
 
@@ -176,59 +156,24 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     console.log('Customers:', customers);
   }, [customers]);
 
-  // Add debug for dividedStocks structure
-  useEffect(() => {
-    if (dividedStocks && dividedStocks.length > 0) {
-      console.log('First dividedStock item structure:', JSON.stringify(dividedStocks[0], null, 2));
-      console.log('Total dividedStocks available:', dividedStocks.length);
-      
-      // Check all properties to debug
-      console.log('dividedStocks[0] properties:',
-        Object.keys(dividedStocks[0]).join(', '),
-        'stockId exists:', 'stockId' in dividedStocks[0],
-        'stock exists:', 'stock' in dividedStocks[0],
-        'gsm exists:', 'gsm' in dividedStocks[0]
-      );
-    }
-  }, [dividedStocks]);
-
-  const allowedTypes: ProductType[] = ["Sublimation Paper", "Protect Paper", "DTF Film", "Ink"];
-
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       customerId: initialData?.customerId || "",
-      orderItems: initialData?.orderItems
-        ? initialData.orderItems
-            .filter(item => allowedTypes.includes(item.type as ProductType))
-            .map(item => ({
-              type: item.type as ProductType,
-              product: (item.product as SublimationProductType) || undefined,
-              gsm: item.gsm ?? undefined,
-              width: item.width ?? undefined,
-              length: item.length ?? undefined,
-              weight: item.weight ?? undefined,
-              quantity: item.quantity ?? 1,
-              price: item.price ?? 0,
-              tax: item.tax ?? 0,
-              stockId: item.stockId ?? undefined,
-            }))
-        : [
-            {
-              type: "Sublimation Paper",
-              product: undefined,
-              price: 0,
-              tax: 0,
-              quantity: 1,
-              weight: "",
-              length: "",
-              width: "",
-              gsm: "",
-            },
-          ],
+      orderItems: initialData?.orderItems || [
+        {
+          type: "Sublimation Paper",
+          product: undefined,
+          price: 0,
+          tax: 0,
+          quantity: 1,
+          weight: "",
+          length: "",
+          width: "",
+          gsm: "",
+        },
+      ],
       note: initialData?.note || "",
-      discount: initialData?.discount || 0,
-      discountType: initialData?.discountType || "percentage",
     },
   });
 
@@ -244,7 +189,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       quantity: item.quantity || 1,
       unitPrice: item.price || 0,
       tax: item.tax || 0,
-    })) as any, // Type assertion required due to different expected interfaces
+    })),
   });
 
   // Add form watch for all fields
@@ -328,14 +273,14 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
   // Update calculateOrderTotal to use the inner calculateItemTotal
   const calculateOrderTotal = () => {
     const items = form.getValues("orderItems") || [];
-    const discount = form.getValues("discount") || 0;
-    const discountType = form.getValues("discountType") || "percentage";
+    console.log('Calculating total for items:', items);
 
     let totalSum = 0;
     const itemDetails = items.map(item => {
       const itemTotal = calculateItemTotal(item);
       totalSum += itemTotal;
       
+      // Create detailed calculation info for logging
       return {
         type: item.type,
         product: item.product,
@@ -347,72 +292,32 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       };
     });
     
-    let discountedTotal = totalSum;
-    if (discountType === "percentage") {
-      // Ensure percentage discount is capped at 100%
-      const cappedDiscount = Math.min(discount, 100);
-      discountedTotal = totalSum - (totalSum * (cappedDiscount / 100));
-    } else {
-      // Value-based discount: directly subtract the amount
-      discountedTotal = totalSum - discount;
-    }
-    
-    // Ensure total is not negative
-    if (discountedTotal < 0) discountedTotal = 0;
-    
     console.log('Item-by-item calculation details:', itemDetails);
-    console.log('Final calculated total:', discountedTotal);
+    console.log('Final calculated total:', totalSum);
     
-    return Number(discountedTotal.toFixed(2));
+    return totalSum;
   };
 
   const getAvailableGSM = (type: string, product?: string) => {
-    console.log('getAvailableGSM called with:', { type, product });
+    console.log('Getting GSM for:', { type, product }); // Debug log
+
     if (type !== "Sublimation Paper" || !product) return [];
 
     if (product === "Jumbo Roll") {
       // For Jumbo Roll, get GSM from stocks
-      const filteredStocks = stocks
-        .filter(s => s.type === "Sublimation Paper" && s.remainingLength > 0);
-      console.log('Filtered Stocks for Jumbo Roll:', filteredStocks);
-      const gsmList = filteredStocks
-        .map(s => s.gsm)
-        .filter(gsm => gsm !== null && gsm !== undefined)
-        .map(gsm => gsm.toString());
-      console.log('GSM List for Jumbo Roll:', gsmList);
+      const gsmList = stocks
+        .filter(s => s.type === "Sublimation Paper" && s.remainingLength > 0)
+        .map(s => s.gsm.toString());
+      console.log('Available Jumbo Roll GSM:', gsmList);
       return Array.from(new Set(gsmList)).sort((a, b) => parseFloat(a) - parseFloat(b));
     } 
-
+    
     if (product === "Roll") {
-      // For Roll, get available divided stocks first
-      const availableDivided = dividedStocks.filter(d => d.remainingLength > 0);
-      console.log('Available divided stocks for Roll:', availableDivided);
-      
-      // Extract any GSM values available
-      const gsmValues: number[] = [];
-      
-      availableDivided.forEach(d => {
-        // Try to get gsm from anywhere it might exist
-        let gsmValue: number | undefined;
-        
-        // First check direct gsm property
-        if ('gsm' in d && d.gsm !== undefined && d.gsm !== null) {
-          gsmValue = d.gsm;
-        }
-        // Next check in stock object if it exists
-        else if ('stock' in d && d.stock && typeof d.stock === 'object' && 'gsm' in (d.stock as any)) {
-          gsmValue = (d.stock as any).gsm;
-        }
-        
-        if (gsmValue !== undefined) {
-          gsmValues.push(gsmValue);
-        }
-      });
-      
-      // Convert to strings
-      const gsmList = gsmValues.map(gsm => gsm.toString());
-      console.log('Extracted GSM values for Roll:', gsmList);
-      
+      // For Roll, get GSM from dividedStocks through stock relationship
+      const gsmList = dividedStocks
+        .filter(d => d.remainingLength > 0)
+        .map(d => d.stock.gsm.toString()); // Access GSM through stock relationship
+      console.log('Available Roll GSM:', gsmList);
       return Array.from(new Set(gsmList)).sort((a, b) => parseFloat(a) - parseFloat(b));
     }
 
@@ -438,61 +343,33 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     }
 
     if (product === "Roll") {
-      // For Roll, find divided items that match the GSM
-      const matchingDivided = dividedStocks.filter(d => {
-        let gsmValue: number | undefined;
-        
-        // Check for gsm property
-        if ('gsm' in d && d.gsm !== undefined) {
-          gsmValue = d.gsm;
-        }
-        // Check in stock object if available
-        else if ('stock' in d && d.stock && typeof d.stock === 'object' && 'gsm' in (d.stock as any)) {
-          gsmValue = (d.stock as any).gsm;
-        }
-        
-        return gsmValue?.toString() === gsm && d.remainingLength > 0;
-      });
-      
-      console.log('Matching divided for widths:', matchingDivided);
-      
-      const widthList = matchingDivided.map(d => d.width.toString());
+      // For Roll, get widths from dividedStocks with matching GSM
+      const widthList = dividedStocks
+        .filter(d => 
+          d.stock.gsm.toString() === gsm && // Access GSM through stock relationship
+          d.remainingLength > 0
+        )
+        .map(d => d.width.toString());
       console.log('Available Roll Widths:', widthList);
-      
       return Array.from(new Set(widthList)).sort((a, b) => parseFloat(a) - parseFloat(b));
     }
 
     return [];
   };
 
-  const getAvailableLengths = (type: string, product?: string, width?: string, gsm?: string) => {
-    if (!product || !width || !gsm || type !== "Sublimation Paper" || product !== "Roll") return [];
+  const getAvailableLengths = (type: string, product: string, width?: string, gsm?: string) => {
+    if (!width || !gsm || type !== "Sublimation Paper" || product !== "Roll") return [];
     
-    console.log('Getting Lengths for:', { type, product, width, gsm }); // Debug log
-    
-    // Filter divided stocks by GSM and width
-    const matchingDivided = dividedStocks.filter(d => {
-      let gsmValue: number | undefined;
-      
-      // Check for gsm property
-      if ('gsm' in d && d.gsm !== undefined) {
-        gsmValue = d.gsm;
-      }
-      // Check in stock object if available
-      else if ('stock' in d && d.stock && typeof d.stock === 'object' && 'gsm' in (d.stock as any)) {
-        gsmValue = (d.stock as any).gsm;
-      }
-      
-      return gsmValue?.toString() === gsm && 
+    // Get lengths from dividedStocks with matching criteria
+    const lengthList = dividedStocks
+      .filter(d => 
+        d.stock.gsm.toString() === gsm && 
         d.width.toString() === width &&
-             d.remainingLength > 0;
-    });
+        d.remainingLength > 0
+      )
+      .map(d => d.length.toString());
 
-    console.log('Matching divided for lengths:', matchingDivided);
-    
-    const lengthList = matchingDivided.map(d => d.length.toString());
     console.log('Available Roll Lengths:', lengthList);
-    
     return Array.from(new Set(lengthList)).sort((a, b) => parseFloat(a) - parseFloat(b));
   };
 
@@ -586,6 +463,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     return null;
   };
 
+  const { createOrderTransaction, updateOrderTransaction, deleteOrderTransaction } = useOrderFinance();
+
   // Add customer selection handler
   const handleCustomerSelect = (customerId: string) => {
     form.setValue('customerId', customerId);
@@ -606,15 +485,6 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         throw new Error(t('sales.orders.errors.itemsRequired', 'At least one order item is required'));
       }
 
-      // Validate discount
-      if (data.discountType === "percentage" && (data.discount < 0 || data.discount > 100)) {
-        throw new Error(t('sales.orders.errors.invalidDiscount', 'Percentage discount must be between 0 and 100'));
-      }
-
-      if (data.discountType === "value" && data.discount < 0) {
-        throw new Error(t('sales.orders.errors.invalidDiscount', 'Value discount must be greater than or equal to 0'));
-      }
-
       const orderItems = data.orderItems.map(item => {
         console.log('Processing item for submission:', item);
         
@@ -622,16 +492,10 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         if (!item.type) {
           throw new Error(t('sales.orders.errors.itemTypeRequired', 'Item type is required'));
         }
-        
-        // Ensure numeric values are properly converted
-        const quantity = Number(item.quantity);
-        const price = Number(item.price);
-        const tax = Number(item.tax || 0);
-        
-        if (!quantity || quantity <= 0) {
+        if (!item.quantity || Number(item.quantity) <= 0) {
           throw new Error(t('sales.orders.errors.invalidQuantity', 'Invalid quantity'));
         }
-        if (!price || price <= 0) {
+        if (!item.price || Number(item.price) <= 0) {
           throw new Error(t('sales.orders.errors.invalidPrice', 'Invalid price'));
         }
 
@@ -639,20 +503,12 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         let stockId = '';
         if (item.type === 'Sublimation Paper') {
           if (item.product === 'Roll') {
-            const dividedStock = dividedStocks.find(d => {
-              // Try to get gsm value safely
-              let gsmValue: number | undefined;
-              if ('gsm' in d && d.gsm !== undefined) {
-                gsmValue = d.gsm;
-              } else if ('stock' in d && d.stock && typeof d.stock === 'object' && 'gsm' in (d.stock as any)) {
-                gsmValue = (d.stock as any).gsm;
-              }
-              
-              return gsmValue?.toString() === item.gsm && 
-                d.width.toString() === item.width &&
-                d.length.toString() === item.length &&
-                d.remainingLength > 0;
-            });
+            const dividedStock = dividedStocks.find(d => 
+              d.stock.gsm.toString() === item.gsm &&
+              d.width.toString() === item.width &&
+              d.length.toString() === item.length &&
+              d.remainingLength > 0
+            );
             stockId = dividedStock?.id || '';
             console.log('Found Roll stock:', { dividedStock, stockId });
           } else if (item.product === 'Jumbo Roll') {
@@ -660,7 +516,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
               s.type === item.type &&
               s.gsm.toString() === item.gsm &&
               s.width.toString() === item.width &&
-              s.weight?.toString() === item.weight &&
+              s.weight.toString() === item.weight &&
               s.remainingLength > 0
             );
             stockId = stock?.id || '';
@@ -671,7 +527,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             s.type === item.type &&
             s.gsm.toString() === item.gsm &&
             s.width.toString() === item.width &&
-            s.weight?.toString() === item.weight &&
+            s.weight.toString() === item.weight &&
             s.remainingLength > 0
           );
           stockId = stock?.id || '';
@@ -696,9 +552,9 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           width: item.width || null,
           length: item.length || null,
           weight: item.weight || null,
-          quantity: quantity,
-          price: price,
-          tax: tax,
+          quantity: Number(item.quantity),
+          price: Number(item.price),
+          tax: Number(item.tax || 0),
           productId: stockId, // Map stockId to productId for API
         };
 
@@ -707,8 +563,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
 
       console.log('Prepared order items for submission:', orderItems);
 
-      // Calculate the total amount - ensure it's a proper number
-      const totalAmount = Number(calculateOrderTotal().toFixed(2));
+      // Calculate the total amount
+      const totalAmount = calculateOrderTotal();
       console.log('Total amount for submission:', totalAmount);
 
       // Prepare final submission data
@@ -716,9 +572,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         customerId: data.customerId,
         orderItems,
         note: data.note || "",
-        totalAmount,
-        discount: Number(data.discount),
-        discountType: data.discountType,
+        totalAmount: Math.round(totalAmount * 100) / 100, // Round to 2 decimal places
       };
 
       console.log('Final submission data:', submissionData);
@@ -757,35 +611,10 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
   };
 
   // Update the handleFieldChange function
-  const handleFieldChange = (index: number, field: keyof OrderItem, value: string) => {
+  const handleFieldChange = (index: number, field: string, value: string) => {
     console.log(`Changing ${field} to ${value} at index ${index}`);
     
-    // Type-safe setValue
-    const path = `orderItems.${index}.${field}` as const;
-    
-    // Special handling for product field to ensure type safety
-    if (field === 'product') {
-      if (value === '') {
-        form.setValue(path, undefined);
-      } else {
-        form.setValue(path, value as SublimationProductType);
-      }
-      
-      // Reset dependent fields
-      form.setValue(`orderItems.${index}.gsm`, '');
-      form.setValue(`orderItems.${index}.width`, '');
-      form.setValue(`orderItems.${index}.length`, '');
-      form.setValue(`orderItems.${index}.weight`, '');
-      form.setValue(`orderItems.${index}.quantity`, 1);
-      form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when product changes
-      
-      // Trigger validation
-      form.trigger(`orderItems.${index}`);
-      return;
-    }
-    
-    // Set the value directly
-    form.setValue(path, value);
+    form.setValue(`orderItems.${index}.${field}`, value);
 
     // Set default values based on product type
     if (field === 'type') {
@@ -793,7 +622,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       if (value === 'Roll') {
         form.setValue(`orderItems.${index}.weight`, null);
       }
-      form.setValue(`orderItems.${index}.product`, undefined);
+      form.setValue(`orderItems.${index}.product`, '');
       form.setValue(`orderItems.${index}.gsm`, '');
       form.setValue(`orderItems.${index}.width`, '');
       form.setValue(`orderItems.${index}.length`, '');
@@ -803,12 +632,21 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     // Reset dependent fields
     switch (field) {
       case 'type':
-        form.setValue(`orderItems.${index}.product`, undefined);
+        form.setValue(`orderItems.${index}.product`, '');
         form.setValue(`orderItems.${index}.gsm`, '');
         form.setValue(`orderItems.${index}.width`, '');
         form.setValue(`orderItems.${index}.length`, '');
         form.setValue(`orderItems.${index}.quantity`, 1);
         form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when type changes
+        break;
+
+      case 'product':
+        form.setValue(`orderItems.${index}.gsm`, '');
+        form.setValue(`orderItems.${index}.width`, '');
+        form.setValue(`orderItems.${index}.length`, '');
+        form.setValue(`orderItems.${index}.weight`, '');
+        form.setValue(`orderItems.${index}.quantity`, 1);
+        form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when product changes
         break;
 
       case 'gsm':
@@ -842,14 +680,12 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         let stockId = '';
         if (type === 'Sublimation Paper') {
           if (product === 'Roll') {
-            const dividedStock = dividedStocks.find(d => {
-              // Find the related stock using stockId
-              const stock = stocks.find(s => s.id === d.stockId);
-              return stock?.gsm.toString() === gsm && 
-                d.width.toString() === width &&
-                d.length.toString() === length &&
-                d.remainingLength > 0;
-            });
+            const dividedStock = dividedStocks.find(d => 
+              d.stock.gsm.toString() === gsm &&
+              d.width.toString() === width &&
+              d.length.toString() === length &&
+              d.remainingLength > 0
+            );
             stockId = dividedStock?.id || '';
             console.log('Found Roll stock:', { dividedStock, stockId });
           } else if (product === 'Jumbo Roll') {
@@ -953,26 +789,22 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       form.reset({
         customerId: initialData.customerId,
         note: initialData.note || "",
-        discount: initialData.discount || 0,
-        discountType: initialData.discountType || "percentage",
-        orderItems: initialData.orderItems
-          .filter(item => allowedTypes.includes(item.type as ProductType))
-          .map(item => ({
-            type: item.type as ProductType,
-            product: (item.product as SublimationProductType) || undefined,
-            gsm: item.gsm ?? undefined,
-            width: item.width ?? undefined,
-            length: item.length ?? undefined,
-            weight: item.weight ?? undefined,
-            quantity: item.quantity ?? 1,
-            price: item.price ?? 0,
-            tax: item.tax ?? 0,
-            stockId: item.stockId ?? undefined,
-          }))
-      } as FormValues); // Type assertion to FormValues
+        orderItems: initialData.orderItems.map(item => ({
+          type: item.type as ProductType,
+          product: item.product as SublimationProductType || undefined,
+          gsm: item.gsm || undefined,
+          width: item.width || undefined,
+          length: item.length || undefined,
+          weight: item.weight || null,
+          quantity: item.quantity,
+          price: item.price,
+          tax: item.tax,
+          stockId: item.stockId || undefined,
+        }))
+      });
 
       // Set all items to checked state when editing
-      const itemIndices = initialData.orderItems.map((_, i) => i);
+      const itemIndices = initialData.orderItems.map((_, index) => index);
       setCheckedItems(itemIndices);
 
       // Update OrderItemSummary state
@@ -1040,7 +872,6 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                   type: "Sublimation Paper",
                   price: 0,
                   tax: 0,
-                  quantity: 1,
                 })}
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -1147,7 +978,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                               <FormLabel>GSM *</FormLabel>
                             <Select 
                                 onValueChange={(value) => handleFieldChange(index, 'gsm', value)}
-                                value={field.value || ''}
+                                value={field.value?.toString()}
                             >
                               <FormControl>
                                 <SelectTrigger>
@@ -1181,7 +1012,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                               <FormLabel>Width (mm) *</FormLabel>
                             <Select 
                                 onValueChange={(value) => handleFieldChange(index, 'width', value)}
-                                value={field.value || ''}
+                                value={field.value?.toString()}
                             >
                               <FormControl>
                                 <SelectTrigger>
@@ -1192,7 +1023,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                                   {getAvailableWidths(
                                     form.getValues(`orderItems.${index}.type`),
                                     form.getValues(`orderItems.${index}.product`),
-                                    form.getValues(`orderItems.${index}.gsm`) || ''
+                                    form.getValues(`orderItems.${index}.gsm`)?.toString()
                                   ).map((width) => (
                                     <SelectItem key={width} value={width}>
                                     {width}
@@ -1206,7 +1037,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                       />
                   )}
 
-                      {/* Weight field */}
+                      {/* Weight field - always visible, disabled for Roll */}
                       <FormField
                         control={form.control}
                         name={`orderItems.${index}.weight`}
@@ -1220,7 +1051,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                             </FormLabel>
                             <Select 
                               onValueChange={(value) => handleFieldChange(index, 'weight', value)}
-                              value={field.value || ''}
+                              value={field.value?.toString()}
                               disabled={form.getValues(`orderItems.${index}.product`) === "Roll"}
                             >
                               <FormControl>
@@ -1234,8 +1065,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                               <SelectContent>
                                 {getAvailableWeights(
                                   form.getValues(`orderItems.${index}.type`),
-                                  form.getValues(`orderItems.${index}.gsm`) || '',
-                                  form.getValues(`orderItems.${index}.width`) || ''
+                                  form.getValues(`orderItems.${index}.gsm`)?.toString(),
+                                  form.getValues(`orderItems.${index}.width`)?.toString()
                                 ).map((weight) => (
                                   <SelectItem key={weight} value={weight}>
                                     {weight}
@@ -1248,7 +1079,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                         )}
                       />
 
-                      {/* Length field */}
+                      {/* Length field - always visible, disabled for Jumbo Roll */}
                       <FormField
                         control={form.control}
                         name={`orderItems.${index}.length`}
@@ -1262,7 +1093,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                             </FormLabel>
                           <Select 
                               onValueChange={(value) => handleFieldChange(index, 'length', value)}
-                              value={field.value || ''}
+                              value={field.value?.toString()}
                               disabled={form.getValues(`orderItems.${index}.product`) === "Jumbo Roll"}
                           >
                             <FormControl>
@@ -1277,8 +1108,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                                 {getAvailableLengths(
                                   form.getValues(`orderItems.${index}.type`),
                                   form.getValues(`orderItems.${index}.product`),
-                                  form.getValues(`orderItems.${index}.width`) || '',
-                                  form.getValues(`orderItems.${index}.gsm`) || ''
+                                  form.getValues(`orderItems.${index}.width`)?.toString(),
+                                  form.getValues(`orderItems.${index}.gsm`)?.toString()
                                 ).map((length) => (
                                   <SelectItem key={length} value={length}>
                                     {length}
@@ -1335,43 +1166,11 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                               <FormLabel>Price (Rp) *</FormLabel>
                         <FormControl>
                           <Input
-                            type="text"
-                            inputMode="decimal"
+                  type="number"
                                   min="0"
+                                  step="1"
                             {...field}
-                            value={field.value !== undefined ? field.value.toString() : ''}
-                            onChange={e => {
-                              // Allow empty field
-                              if (!e.target.value) {
-                                field.onChange(0);
-                                return;
-                              }
-                              
-                              // Only allow numbers and a single decimal point
-                              const value = e.target.value;
-                              const regex = /^[0-9]*\.?[0-9]*$/;
-                              
-                              if (regex.test(value)) {
-                                // For incomplete decimal input (like "123.") keep as string temporarily
-                                const isIncompleteDecimal = value.endsWith('.');
-                                
-                                if (isIncompleteDecimal) {
-                                  field.onChange(value);
-                                } else {
-                                  // Convert to number for complete inputs
-                                  field.onChange(Number(value));
-                                }
-                              }
-                            }}
-                            onBlur={(e) => {
-                              // When field loses focus, ensure value is converted to number
-                              const value = e.target.value;
-                              if (value && (typeof value === 'string')) {
-                                field.onChange(Number(value));
-                              }
-                              // Call the original onBlur if it exists
-                              if (field.onBlur) field.onBlur();
-                            }}
+                                  onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                           />
                         </FormControl>
                         <FormMessage />
@@ -1407,84 +1206,13 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             ))}
         </div>
 
-          {/* Discount Type and Value Section */}
+          {/* Order Total */}
           <div className="flex justify-end space-x-4 pt-4 border-t">
-            <div className="flex items-center gap-4">
-              <FormField
-                control={form.control}
-                name="discountType"
-                render={({ field }) => (
-                  <FormItem className="flex items-center gap-2">
-                    <FormLabel>Discount Type:</FormLabel>
-                    <FormControl>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger className="w-28">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="percentage">Percentage (%)</SelectItem>
-                          <SelectItem value="value">Fixed Amount (Rp)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="discount"
-                render={({ field }) => (
-                  <FormItem className="flex items-center gap-2">
-                    <FormLabel>Discount{form.watch("discountType") === "percentage" ? " (%)" : " (Rp)"}:</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="w-24"
-                        {...field}
-                        max={form.watch("discountType") === "percentage" ? 100 : undefined}
-                        onChange={e => {
-                          const value = parseFloat(e.target.value) || 0;
-                          // Prevent values over 100 for percentage discounts
-                          if (form.watch("discountType") === "percentage" && value > 100) {
-                            field.onChange(100);
-                          } else {
-                            field.onChange(value);
-                          }
-                        }}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          </div>
-
-          {/* Order Total with Clear Labeling */}
-          <div className="flex justify-end space-x-4 pt-4 border-t">
-            {form.watch("discount") > 0 && (
-              <div className="flex-col text-right mr-4">
-                <div className="text-sm text-muted-foreground">
-                  Subtotal: {formatCurrency(calculateOrderTotal() + (form.watch("discountType") === "percentage" 
-                    ? calculateOrderTotal() * form.watch("discount") / (100 - form.watch("discount"))
-                    : form.watch("discount")
-                  ))}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {form.watch("discountType") === "percentage" 
-                    ? `Discount: ${form.watch("discount")}%`
-                    : `Discount: ${formatCurrency(form.watch("discount"))}`
-                  }
-                </div>
-              </div>
-            )}
             <div className="text-sm font-medium">Total Amount:</div>
             <div className="text-lg font-semibold">
               {formatCurrency(calculateOrderTotal())}
-            </div>
-          </div>
+                </div>
+        </div>
 
           {/* Note Field */}
         <FormField
