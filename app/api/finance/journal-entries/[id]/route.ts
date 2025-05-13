@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -13,7 +13,10 @@ export async function GET(
     }
 
     const entry = await prisma.journalEntry.findUnique({
-      where: { id: params.id },
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+          where: { id: id },
       include: {
         items: {
           include: {
@@ -36,7 +39,7 @@ export async function GET(
 
 export async function PUT(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -49,7 +52,7 @@ export async function PUT(
 
     // Get the current entry
     const currentEntry = await prisma.journalEntry.findUnique({
-      where: { id: params.id }
+      where: { id: id }
     });
 
     if (!currentEntry) {
@@ -74,7 +77,7 @@ export async function PUT(
 
     // Update the entry and its items
     const entry = await prisma.journalEntry.update({
-      where: { id: params.id },
+      where: { id: id },
       data: {
         date: new Date(date),
         description,
@@ -107,7 +110,7 @@ export async function PUT(
 
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -117,7 +120,7 @@ export async function DELETE(
 
     // Get the current entry
     const entry = await prisma.journalEntry.findUnique({
-      where: { id: params.id }
+      where: { id: id }
     });
 
     if (!entry) {
@@ -130,7 +133,7 @@ export async function DELETE(
 
     // Delete the entry (this will cascade delete the items)
     await prisma.journalEntry.delete({
-      where: { id: params.id }
+      where: { id: id }
     });
 
     return new NextResponse(null, { status: 204 });

@@ -3,11 +3,15 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+
     const divided = await prisma.divided.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         stock: true,
         inspectedBy: {
@@ -31,14 +35,17 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
     const data = await request.json();
 
     // Check if divided stock exists
     const existingDivided = await prisma.divided.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         stock: true,
       },
@@ -60,7 +67,7 @@ export async function PUT(
     const [divided] = await prisma.$transaction([
       prisma.divided.update({
         where: {
-          id: params.id,
+          id,
         },
         data: {
           width: data.width,
@@ -97,12 +104,16 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+    
     // Get divided stock with parent stock
     const divided = await prisma.divided.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         stock: true,
       },
@@ -116,7 +127,7 @@ export async function DELETE(
     await prisma.$transaction([
       prisma.divided.delete({
         where: {
-          id: params.id,
+          id,
         },
       }),
       prisma.stock.update({
@@ -135,5 +146,51 @@ export async function DELETE(
   } catch (error) {
     console.error("Error deleting divided stock:", error);
     return NextResponse.json({ error: "Error deleting divided stock" }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+    const data = await request.json();
+
+    // Check if divided stock exists
+    const existingDivided = await prisma.divided.findUnique({
+      where: { id },
+    });
+
+    if (!existingDivided) {
+      return NextResponse.json({ error: "Divided stock not found" }, { status: 404 });
+    }
+
+    // Validate width
+    if (typeof data.width !== "number" || isNaN(data.width) || data.width <= 0) {
+      return NextResponse.json({ error: "Invalid width value" }, { status: 400 });
+    }
+
+    // Update only the width
+    const updated = await prisma.divided.update({
+      where: { id },
+      data: {
+        width: data.width,
+      },
+      include: {
+        stock: true,
+        inspectedBy: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error("Error updating divided width:", error);
+    return NextResponse.json({ error: "Error updating divided width" }, { status: 500 });
   }
 } 

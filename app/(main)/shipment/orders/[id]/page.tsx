@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,9 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui';
-import { useOrderById } from '@/app/hooks/use-shipment-orders';
+import { useOrderById, Order, OrderItem } from '@/app/hooks/use-shipment-orders';
 import { LoadingSpinner } from '@/components/ui';
-import { formatAddress } from '@/lib/utils';
 import { AlertCircle, CheckCircle, Truck, XCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from "@/components/ui/label";
@@ -34,11 +33,19 @@ interface ScannedItem {
   dividedId?: string;
 }
 
-export default function OrderDetailPage({ params }: { params: { id: string } }) {
+// Types for Order data
+interface Customer {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+}
+
+export default function OrderShipmentPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const { toast } = useToast();
-  const { data, isLoading, error } = useOrderById(params.id);
-  const order = data?.order;
+  const { id } = use(params);
+  const { order, isLoading, error } = useOrderById(id);
   
   const [barcode, setBarcode] = useState<string>('');
   // Replace simple Set with Map to track multiple scans per item
@@ -65,13 +72,13 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   // Helper function to calculate total required items
   const getTotalRequiredCount = () => {
     if (!order) return 0;
-    return order.items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+    return order.orderItems.reduce((sum: number, item: OrderItem) => sum + (Number(item.quantity) || 1), 0);
   };
 
   // Check if all items have been sufficiently scanned based on quantity
   const allItemsFullyScanned = () => {
     if (!order) return false;
-    return order.items.every(item => {
+    return order.orderItems.every((item: OrderItem) => {
       const scannedCount = scannedBarcodes.get(item.id)?.length || 0;
       return scannedCount >= (Number(item.quantity) || 1);
     });
@@ -92,7 +99,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     
     try {
       const response = await axios.post('/api/shipment/validate-barcode', {
-        orderId: params.id,
+        orderId: id,
         barcodeValue: barcode.trim(),
       });
       
@@ -101,7 +108,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       setValidationResult(result);
       
       if (result.matched) {
-        const orderItem = order.items.find(item => item.id === result.orderItem.id);
+        const orderItem = order.orderItems.find((item: OrderItem) => item.id === result.orderItem.id);
         const currentScans = scannedBarcodes.get(result.orderItem.id) || [];
         
         // Check if we already have enough scans for this item
@@ -197,7 +204,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
     
     try {
       const response = await axios.post('/api/shipment/process', {
-        orderId: params.id,
+        orderId: id,
         scannedItems: allScannedItems,
         notes: shipmentNotes,
       });
@@ -304,12 +311,11 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
             <div>
               <h3 className="font-medium text-sm text-muted-foreground">Customer</h3>
               <p className="font-semibold">{order.customer.name}</p>
-              <p className="text-sm text-muted-foreground">{order.customer.email}</p>
               <p className="text-sm text-muted-foreground">{order.customer.phone}</p>
             </div>
             <div>
               <h3 className="font-medium text-sm text-muted-foreground">Shipping Address</h3>
-              <p className="text-sm">{formatAddress(order.address)}</p>
+              <p className="text-sm">{order.customer.address}</p>
             </div>
             <div>
               <h3 className="font-medium text-sm text-muted-foreground">Order Date</h3>
@@ -362,7 +368,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                 Order Items ({getTotalScannedCount()}/{getTotalRequiredCount()} scanned)
               </h3>
               <div className="space-y-4">
-                {order.items.map((item) => {
+                {order.orderItems.map((item: OrderItem) => {
                   const scannedItems = scannedBarcodes.get(item.id) || [];
                   const requiredCount = Number(item.quantity) || 1;
                   const isFullyScanned = scannedItems.length >= requiredCount;
@@ -376,9 +382,9 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div>
-                          <p className="font-medium">{item.productName}</p>
+                          <p className="font-medium">{item.product || item.type}</p>
                           <p className="text-sm text-muted-foreground">
-                            SKU: {item.sku} • Required quantity: {requiredCount}
+                            SKU: {item.sku || 'N/A'} • Required quantity: {requiredCount}
                           </p>
                         </div>
                         <Badge variant={isFullyScanned ? "default" : "outline"}>

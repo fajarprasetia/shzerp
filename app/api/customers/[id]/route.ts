@@ -9,10 +9,12 @@ interface RouteParams {
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = params.id;
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
     console.log(`Fetching customer with ID: ${id}`);
     
     const customer = await prisma.customer.findUnique({

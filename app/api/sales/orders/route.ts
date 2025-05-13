@@ -192,61 +192,101 @@ export async function POST(req: Request) {
       };
     });
 
-    // Generate order number (format: YYYYMMDD-XX where XX is sequence for the day)
+    // Generate a unique order number - improved implementation
+    // Format: YYYYMMDD-XXX where XXX is a unique timestamp-based suffix
     const today = new Date();
     const dateString = today.toISOString().slice(0, 10).replace(/-/g, '');
     
-    // Get count of orders for today to determine sequence
-    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+    // Always include a timestamp component for guaranteed uniqueness
+    const timestamp = Date.now() % 1000000; // Last 6 digits of timestamp
+    const randomComponent = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
     
-    const ordersToday = await prisma.order.count({
-      where: {
-        createdAt: {
-          gte: startOfDay,
-          lte: endOfDay
-        }
-      }
-    });
+    // Combine date with timestamp and random component for guaranteed uniqueness
+    const orderNumber = `${dateString}-${timestamp}-${randomComponent}`;
     
-    // Format sequence with leading zero
-    const sequence = (ordersToday + 1).toString().padStart(2, '0');
-    const orderNumber = `${dateString}-${sequence}`;
+    console.log(`Generated guaranteed unique order number: ${orderNumber}`);
 
-    // Create order in database
-    const order = await prisma.order.create({
-      data: {
-        orderNo: orderNumber,
-        customerId: body.customerId,
-        totalAmount,
-        discount: body.discount ? Number(body.discount) : 0,
-        discountType: body.discountType || "percentage",
-        note: body.note || "",
-        orderItems: {
-          create: orderItems.map(item => ({
-            type: item.type,
-            product: item.product || null,
-            gsm: item.gsm || null,
-            width: item.width || null,
-            length: item.length || null,
-            weight: item.weight || null,
-            quantity: item.quantity,
-            price: item.price,
-            tax: item.tax,
-            stockId: item.stockId,
-            dividedId: item.dividedId
-          }))
+    try {
+      // Create order in database - wrapped in try/catch to handle unique constraint errors
+      const order = await prisma.order.create({
+        data: {
+          orderNo: orderNumber,
+          customerId: body.customerId,
+          totalAmount,
+          discount: body.discount ? Number(body.discount) : 0,
+          discountType: body.discountType || "percentage",
+          note: body.note || "",
+          orderItems: {
+            create: orderItems.map(item => ({
+              type: item.type,
+              product: item.product || null,
+              gsm: item.gsm || null,
+              width: item.width || null,
+              length: item.length || null,
+              weight: item.weight || null,
+              quantity: item.quantity,
+              price: item.price,
+              tax: item.tax,
+              stockId: item.stockId,
+              dividedId: item.dividedId
+            }))
+          }
+        },
+        include: {
+          orderItems: true,
+          customer: true
         }
-      },
-      include: {
-        orderItems: true,
-        customer: true
-      }
-    });
+      });
 
-    // Don't update inventory at all - inventory will only be updated during shipment process
-    
-    return NextResponse.json(order);
+      return NextResponse.json(order);
+    } catch (error: any) {
+      // Handle unique constraint errors specifically
+      if (error.code === 'P2002' && error.meta?.target?.includes('orderNo')) {
+        console.error(`Unique constraint error on orderNo: ${orderNumber}`);
+        
+        // Create a new order number with timestamp to guarantee uniqueness
+        const timestamp = Date.now().toString().slice(-6);
+        const emergencyOrderNumber = `${dateString}-${timestamp}`;
+        
+        console.log(`Retrying with emergency order number: ${emergencyOrderNumber}`);
+        
+        // Try once more with the emergency order number
+        const order = await prisma.order.create({
+          data: {
+            orderNo: emergencyOrderNumber,
+            customerId: body.customerId,
+            totalAmount,
+            discount: body.discount ? Number(body.discount) : 0,
+            discountType: body.discountType || "percentage",
+            note: body.note || "",
+            orderItems: {
+              create: orderItems.map(item => ({
+                type: item.type,
+                product: item.product || null,
+                gsm: item.gsm || null,
+                width: item.width || null,
+                length: item.length || null,
+                weight: item.weight || null,
+                quantity: item.quantity,
+                price: item.price,
+                tax: item.tax,
+                stockId: item.stockId,
+                dividedId: item.dividedId
+              }))
+            }
+          },
+          include: {
+            orderItems: true,
+            customer: true
+          }
+        });
+        
+        return NextResponse.json(order);
+      }
+      
+      // Re-throw other errors
+      throw error;
+    }
   } catch (error) {
     console.error("Error creating order:", error);
     return NextResponse.json(

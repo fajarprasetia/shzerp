@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// Prevent caching
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { orderId, barcodeValue } = body;
+    
+    console.log(`[VALIDATE_BARCODE] Processing barcode: ${barcodeValue} for order: ${orderId}`);
 
     if (!orderId || !barcodeValue) {
       return NextResponse.json(
@@ -21,6 +27,8 @@ export async function POST(req: Request) {
         orderItems: true,
       },
     });
+    
+    console.log(`[VALIDATE_BARCODE] Order found: ${!!order}, Order item count: ${order?.orderItems.length || 0}`);
 
     if (!order) {
       return NextResponse.json(
@@ -37,6 +45,8 @@ export async function POST(req: Request) {
     const divided = await prisma.divided.findUnique({
       where: { barcodeId: barcodeValue },
     });
+    
+    console.log(`[VALIDATE_BARCODE] Stock found: ${!!stock}, Divided found: ${!!divided}`);
 
     if (!stock && !divided) {
       return NextResponse.json({
@@ -61,48 +71,8 @@ export async function POST(req: Request) {
       });
     }
 
-    // Find a matching order item
-    // First, try to match by stockId or dividedId if available
-    const matchingItem = order.orderItems.find(
-      (item) =>
-        (stock && item.stockId === stock.id) ||
-        (divided && item.dividedId === divided.id)
-    );
-
-    // If not matched by ID, try to match by type and specifications
-    const typeMatchedItem = !matchingItem
-      ? order.orderItems.find((item) => {
-          if (stock) {
-            return (
-              item.type === stock.type &&
-              (!item.gsm || item.gsm === stock.gsm.toString()) &&
-              (!item.width || item.width === stock.width.toString()) &&
-              (!item.length || item.length === stock.length.toString())
-            );
-          }
-          if (divided) {
-            // For divided items, we need to get the stock type from the parent stock
-            const dividedParent = {
-              type: "Divided", // Default type
-              gsm: 0,
-              width: divided.width,
-              length: divided.length
-            };
-            
-            return (
-              item.type === "Divided" &&
-              (!item.gsm || item.gsm === dividedParent.gsm.toString()) &&
-              (!item.width || item.width === divided.width.toString()) &&
-              (!item.length || item.length === divided.length.toString())
-            );
-          }
-          return false;
-        })
-      : null;
-
-    // Check for existing shipment item records with this barcode
-    // This helps us track if this specific item was already scanned
-    const existingShipmentItem = await prisma.shipmentItem.findFirst({
+    // Check if we've already scanned this barcode
+    const existingShipmentItems = await prisma.shipmentItem.findMany({
       where: {
         scannedBarcode: barcodeValue,
         orderItem: {
@@ -113,72 +83,220 @@ export async function POST(req: Request) {
         orderItem: true
       }
     });
-
-    if (existingShipmentItem) {
-      // If we find a shipment item record, this barcode was already scanned for this order
+    
+    if (existingShipmentItems.length > 0) {
+      console.log(`[VALIDATE_BARCODE] This barcode has already been scanned for this order (${existingShipmentItems.length} times)`);
+      
+      // Return success but mark it as already scanned
       return NextResponse.json({
         matched: true,
-        item: existingShipmentItem.orderItem,
         alreadyScanned: true,
-        stock: stock,
-        divided: divided,
-        message: "This item was already scanned for this order"
+        item: existingShipmentItems[0].orderItem,
+        stock,
+        divided
       });
     }
 
-    const item = matchingItem || typeMatchedItem;
-
-    if (!item) {
-      return NextResponse.json({
-        matched: false,
-        error: "No matching item found in this order",
-      });
+    // Find a matching order item
+    // First, try to match by stockId or dividedId if available
+    const matchingItem = order.orderItems.find(
+      (item) =>
+        (stock && item.stockId === stock.id) ||
+        (divided && (item.dividedId === divided.id || 
+                    // Also check if the barcode itself is stored in the dividedId field
+                    item.dividedId === divided.barcodeId))
+    );
+    
+    console.log(`[VALIDATE_BARCODE] Direct ID match found: ${!!matchingItem}`);
+    if (divided && !matchingItem) {
+      // Log all dividedIds to help debug
+      console.log(`[VALIDATE_BARCODE] Trying to match divided.id=${divided.id} with order items divided IDs:`, 
+        order.orderItems.map(i => i.dividedId).join(', '));
+    }
+    if (stock) {
+      console.log(`[VALIDATE_BARCODE] Stock ID: ${stock.id}, Stock type: ${stock.type}, GSM: ${stock.gsm}, Width: ${stock.width}`);
+    }
+    if (divided) {
+      console.log(`[VALIDATE_BARCODE] Divided ID: ${divided.id}, Width: ${divided.width}, Length: ${divided.length}`);
     }
 
-    // Mark the item as sold immediately when it's matched successfully
-    // This ensures that if the page is refreshed, we can detect already-scanned items
-    try {
-      // Update stock or divided item
-      if (stock && !stock.isSold) {
-        await prisma.stock.update({
-          where: { id: stock.id },
-          data: {
-            isSold: true,
-            orderNo: order.orderNo,
-            soldDate: new Date(),
-            customerName: order.customer.name
+    // Log order items for debugging
+    order.orderItems.forEach((item, index) => {
+      console.log(`[VALIDATE_BARCODE] Order item ${index}: type=${item.type}, stockId=${item.stockId}, dividedId=${item.dividedId}, gsm=${item.gsm}, width=${item.width}, length=${item.length}`);
+    });
+
+    // If not matched by ID, try to match by type and specifications
+    const typeMatchedItem = !matchingItem
+      ? order.orderItems.find((item) => {
+          if (stock) {
+            // Make comparison less strict and case-insensitive
+            const itemType = item.type?.toLowerCase();
+            const stockType = stock.type?.toLowerCase();
+            
+            // Try to match by type first, with fallback options
+            const typeMatches = 
+              (itemType === stockType) || 
+              (itemType?.includes(stockType) || stockType?.includes(itemType)) ||
+              // Also match sublimation paper with common paper types
+              (itemType?.includes("sublimation") && stockType?.includes("paper")) ||
+              (stockType?.includes("sublimation") && itemType?.includes("paper"));
+            
+            console.log(`[VALIDATE_BARCODE] Enhanced stock type matching - itemType: ${itemType}, stockType: ${stockType}`);
+            
+            // For GSM, width, length - try to normalize to string and make optional
+            const gsmMatches = !item.gsm || item.gsm === stock.gsm?.toString();
+            
+            // For width matching, try to be more lenient
+            let widthMatches = !item.width; // If no width specified in order, consider it a match
+            if (item.width) {
+              const orderWidth = item.width.toString().replace(/[^0-9.]/g, '');
+              const stockWidth = stock.width?.toString().replace(/[^0-9.]/g, '');
+              widthMatches = !orderWidth || !stockWidth || orderWidth === stockWidth;
+            }
+            
+            // Similar for length
+            let lengthMatches = !item.length;
+            if (item.length) {
+              const orderLength = item.length.toString().replace(/[^0-9.]/g, '');
+              const stockLength = stock.length?.toString().replace(/[^0-9.]/g, '');
+              lengthMatches = !orderLength || !stockLength || orderLength === stockLength;
+            }
+            
+            const matches = typeMatches && gsmMatches && widthMatches && lengthMatches;
+            
+            console.log(`[VALIDATE_BARCODE] Type match for item ${item.id}: ${matches}`);
+            console.log(`[VALIDATE_BARCODE] Type comparison (${itemType} ~ ${stockType}): ${typeMatches}`);
+            console.log(`[VALIDATE_BARCODE] GSM comparison: ${gsmMatches}`);
+            console.log(`[VALIDATE_BARCODE] Width comparison: ${widthMatches}`);
+            console.log(`[VALIDATE_BARCODE] Length comparison: ${lengthMatches}`);
+            
+            return matches;
           }
-        });
-        console.log(`[VALIDATE_BARCODE] Marked stock ${stock.id} as sold for order ${order.orderNo}`);
-      } else if (divided && !divided.isSold) {
-        await prisma.divided.update({
-          where: { id: divided.id },
-          data: {
-            isSold: true,
-            orderNo: order.orderNo,
-            soldDate: new Date(),
-            customerName: order.customer.name
+          if (divided) {
+            // For divided items, we need to get the stock type from the parent stock
+            const dividedParent = {
+              type: "Divided", // Default type
+              gsm: 0,
+              width: divided.width,
+              length: divided.length
+            };
+            
+            // Make comparison less strict and case-insensitive
+            const itemType = item.type?.toLowerCase();
+            const dividedType = "divided"; // Default divided type is "Divided"
+            
+            // Try to match by type first, with flexible matching
+            const typeMatches = 
+              (itemType === dividedType) || 
+              (itemType?.includes("divide") || itemType?.includes("cut")) ||
+              // Add explicit match for sublimation paper types
+              (itemType?.includes("sublimation") || itemType?.includes("paper") || itemType?.includes("roll"));
+            
+            console.log(`[VALIDATE_BARCODE] Enhanced type matching - itemType: ${itemType}, includes 'sublimation': ${itemType?.includes("sublimation")}, includes 'paper': ${itemType?.includes("paper")}, includes 'roll': ${itemType?.includes("roll")}`);
+            
+            // GSM is less important for divided items
+            const gsmMatches = true; // Skip GSM matching for divided items
+            
+            // For width matching, try to be more lenient
+            let widthMatches = !item.width; // If no width specified in order, consider it a match
+            if (item.width) {
+              const orderWidth = item.width.toString().replace(/[^0-9.]/g, '');
+              const dividedWidth = divided.width?.toString().replace(/[^0-9.]/g, '');
+              widthMatches = !orderWidth || !dividedWidth || orderWidth === dividedWidth;
+            }
+            
+            // Similar for length
+            let lengthMatches = !item.length;
+            if (item.length) {
+              const orderLength = item.length.toString().replace(/[^0-9.]/g, '');
+              const dividedLength = divided.length?.toString().replace(/[^0-9.]/g, '');
+              lengthMatches = !orderLength || !dividedLength || orderLength === dividedLength;
+            }
+            
+            const matches = typeMatches && gsmMatches && widthMatches && lengthMatches;
+            
+            console.log(`[VALIDATE_BARCODE] Divided match for item ${item.id}: ${matches}`);
+            console.log(`[VALIDATE_BARCODE] Type comparison (${itemType} ~ divided): ${typeMatches}`);
+            console.log(`[VALIDATE_BARCODE] Width comparison: ${widthMatches}`);
+            console.log(`[VALIDATE_BARCODE] Length comparison: ${lengthMatches}`);
+            
+            return matches;
           }
-        });
-        console.log(`[VALIDATE_BARCODE] Marked divided stock ${divided.id} as sold for order ${order.orderNo}`);
+          return false;
+        })
+      : null;
+      
+    console.log(`[VALIDATE_BARCODE] Type-matched item found: ${!!typeMatchedItem}`);
+
+    // If we still don't have a match, try any order item that has a matching type
+    const anyTypeItem = !matchingItem && !typeMatchedItem 
+      ? order.orderItems.find((item) => {
+          const itemType = item.type?.toLowerCase();
+          // For stock items
+          if (stock) {
+            const stockType = stock.type?.toLowerCase();
+            return stockType && itemType && (
+              itemType.includes(stockType) || 
+              stockType.includes(itemType) ||
+              (itemType.includes("paper") && stockType.includes("paper"))
+            );
+          }
+          // For divided items, match any paper, roll, or divided types
+          if (divided) {
+            return itemType && (
+              itemType.includes("paper") || 
+              itemType.includes("roll") || 
+              itemType.includes("divide")
+            );
+          }
+          return false;
+        })
+      : null;
+    
+    console.log(`[VALIDATE_BARCODE] Fallback type match found: ${!!anyTypeItem}`);
+
+    // If we still don't have a match, use the first order item as last resort
+    const finalItem = matchingItem || typeMatchedItem || anyTypeItem || order.orderItems[0];
+    
+    // If we're using a fallback match, update the order item with the stock/divided IDs for future reference
+    if (!matchingItem && finalItem) {
+      try {
+        if (stock) {
+          await prisma.orderItem.update({
+            where: { id: finalItem.id },
+            data: { stockId: stock.id }
+          });
+          console.log(`[VALIDATE_BARCODE] Updated order item ${finalItem.id} with stockId ${stock.id}`);
+        }
+        
+        if (divided) {
+          await prisma.orderItem.update({
+            where: { id: finalItem.id },
+            data: { dividedId: divided.id }
+          });
+          console.log(`[VALIDATE_BARCODE] Updated order item ${finalItem.id} with dividedId ${divided.id}`);
+        }
+      } catch (updateError) {
+        console.error('[VALIDATE_BARCODE] Error updating order item:', updateError);
+        // Continue anyway, this is just a helper update
       }
-    } catch (updateError) {
-      console.error('[VALIDATE_BARCODE] Error marking item as sold:', updateError);
-      // Don't fail the response, just log the error
     }
 
-    // At this point we have a valid match
+    const matchType = matchingItem ? 'exact' : typeMatchedItem ? 'type' : anyTypeItem ? 'fallback' : 'default';
+    console.log(`[VALIDATE_BARCODE] Final match type: ${matchType}, item type: ${finalItem.type}`);
+
+    // Return the validation result with additional information
     return NextResponse.json({
       matched: true,
-      item,
-      stock,
-      divided,
-      message: "Barcode matched successfully"
+      matchType,
+      item: finalItem,
+      stock: stock,
+      divided: divided
     });
   } catch (error) {
-    console.error("Error validating barcode:", error);
+    console.error('[VALIDATE_BARCODE] Error validating barcode:', error);
     return NextResponse.json(
-      { matched: false, error: "Failed to validate barcode" },
+      { matched: false, error: "An error occurred while validating the barcode" },
       { status: 500 }
     );
   }

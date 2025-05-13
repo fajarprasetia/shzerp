@@ -69,26 +69,79 @@ export async function POST(req: Request) {
       }
     }
 
-    // Create the shipment record
-    const shipment = await prisma.shipment.create({
-      data: {
+    // Check for an existing IN_PROGRESS shipment
+    const existingShipment = await prisma.shipment.findFirst({
+      where: { 
         orderId: order.id,
-        shippedBy: session.user.id,
-        notes: notes || "",
-        shipmentDate: new Date(),
-        items: {
-          create: scannedItems.map(item => ({
-            orderItemId: item.orderItemId,
-            scannedBarcode: item.barcode,
-            stockId: item.stockId,
-            dividedId: item.dividedId
-          }))
-        }
+        status: 'IN_PROGRESS'
       },
       include: {
         items: true
       }
     });
+
+    // Create or update the shipment record
+    let shipment;
+    
+    if (existingShipment) {
+      console.log(`Found existing IN_PROGRESS shipment (${existingShipment.id}) for order ${orderId}, updating to COMPLETED`);
+      
+      // Update existing shipment
+      shipment = await prisma.shipment.update({
+        where: { id: existingShipment.id },
+        data: {
+          status: 'COMPLETED',
+          shippedBy: session.user.id,
+          notes: notes || "",
+          shipmentDate: new Date(),
+          // Keep existing items and add any missing ones
+          items: {
+            createMany: {
+              data: scannedItems
+                .filter(item => {
+                  // Only add items not already in the shipment
+                  return !existingShipment.items.some(
+                    existing => 
+                      existing.orderItemId === item.orderItemId && 
+                      existing.scannedBarcode === item.barcode
+                  );
+                })
+                .map(item => ({
+                  orderItemId: item.orderItemId,
+                  scannedBarcode: item.barcode,
+                  stockId: item.stockId,
+                  dividedId: item.dividedId
+                }))
+            }
+          }
+        },
+        include: {
+          items: true
+        }
+      });
+    } else {
+      // Create a new shipment record
+      shipment = await prisma.shipment.create({
+        data: {
+          orderId: order.id,
+          shippedBy: session.user.id,
+          notes: notes || "",
+          shipmentDate: new Date(),
+          status: 'COMPLETED',
+          items: {
+            create: scannedItems.map(item => ({
+              orderItemId: item.orderItemId,
+              scannedBarcode: item.barcode,
+              stockId: item.stockId,
+              dividedId: item.dividedId
+            }))
+          }
+        },
+        include: {
+          items: true
+        }
+      });
+    }
 
     // Update order status
     await prisma.order.update({

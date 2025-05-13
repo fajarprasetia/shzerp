@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -15,7 +15,10 @@ export async function GET(
     // Get all journal entry items for the account
     const items = await prisma.journalEntryItem.findMany({
       where: {
-        accountId: params.id,
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+            accountId: id,
         journalEntry: {
           status: "POSTED"
         }

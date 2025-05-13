@@ -19,9 +19,16 @@ import { useState, useEffect } from "react";
 interface InspectionTableProps {
   stocks: Stock[];
   divided: Divided[];
+  onInspectStock?: (stockId: string) => void;
+  onInspectDivided?: (dividedId: string) => void;
 }
 
-export function InspectionTable({ stocks, divided }: InspectionTableProps) {
+export function InspectionTable({ 
+  stocks, 
+  divided,
+  onInspectStock,
+  onInspectDivided
+}: InspectionTableProps) {
   // Use the pre-initialized i18n instance
   const { t } = useTranslation(undefined, { i18n: i18nInstance });
   const [mounted, setMounted] = useState(false);
@@ -69,7 +76,10 @@ export function InspectionTable({ stocks, divided }: InspectionTableProps) {
                 {format(new Date(stock.arrivalDate), "dd/MM/yyyy")}
               </TableCell>
               <TableCell>
-                <InspectStockButton stock={stock} />
+                <InspectStockButton 
+                  stock={stock} 
+                  onInspect={onInspectStock ? () => onInspectStock(stock.id) : undefined}
+                />
               </TableCell>
             </TableRow>
           ))}
@@ -84,7 +94,10 @@ export function InspectionTable({ stocks, divided }: InspectionTableProps) {
               <TableCell>-</TableCell>
               <TableCell>-</TableCell>
               <TableCell>
-                <InspectDividedButton divided={item} />
+                <InspectDividedButton 
+                  divided={item} 
+                  onInspect={onInspectDivided ? () => onInspectDivided(item.id) : undefined}
+                />
               </TableCell>
             </TableRow>
           ))}

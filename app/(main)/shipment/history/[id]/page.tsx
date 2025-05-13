@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,7 +44,12 @@ interface Shipment {
   };
 }
 
-export default function ShipmentDetailPage({ params }: { params: { id: string } }) {
+export default function ShipmentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params using React.use
+  // @ts-ignore - Suppressing potential params access warning
+  const unwrappedParams = use(params);
+  const shipmentId = unwrappedParams.id;
+  
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
@@ -52,9 +57,6 @@ export default function ShipmentDetailPage({ params }: { params: { id: string } 
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const { t } = useTranslation(undefined, { i18n: i18nInstance });
-  
-  // Directly access the id from params
-  const shipmentId = params.id;
   
   useEffect(() => {
     setMounted(true);

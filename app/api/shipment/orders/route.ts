@@ -30,11 +30,25 @@ export async function GET(req: NextRequest) {
         }
       : {};
     
-    // Find orders that don't have any shipments yet
+    // First get all orders with completed shipments
+    const ordersWithCompletedShipment = await prisma.shipment.findMany({
+      where: {
+        status: "COMPLETED" as any
+      },
+      select: {
+        orderId: true
+      }
+    });
+    
+    // Extract the order IDs with completed shipments
+    const completedOrderIds = ordersWithCompletedShipment.map(ship => ship.orderId);
+    
+    // Find orders that don't have completed shipments
     const orders = await prisma.order.findMany({
       where: {
-        // Only include orders that haven't been shipped yet
-        shipment: null,
+        id: {
+          notIn: completedOrderIds.length > 0 ? completedOrderIds : undefined
+        },
         ...searchFilter,
       },
       include: {
@@ -67,10 +81,12 @@ export async function GET(req: NextRequest) {
       take: pageSize,
     });
     
-    // Get total count for pagination
+    // Count with the same filter
     const totalOrders = await prisma.order.count({
       where: {
-        shipment: null,
+        id: {
+          notIn: completedOrderIds.length > 0 ? completedOrderIds : undefined
+        },
         ...searchFilter,
       },
     });
@@ -112,6 +128,22 @@ export async function POST(req: NextRequest) {
       );
     }
     
+    // Check if this order already has a shipment in progress
+    const existingShipment = await prisma.shipment.findFirst({
+      where: { 
+        orderId: id,
+        status: "COMPLETED" as any
+      }
+    });
+    
+    // If there's a completed shipment, the order has already been shipped
+    if (existingShipment) {
+      return NextResponse.json(
+        { error: 'Order has already been shipped' },
+        { status: 400 }
+      );
+    }
+    
     // Fetch the order with customer and items
     const order = await prisma.order.findUnique({
       where: { id },
@@ -136,7 +168,7 @@ export async function POST(req: NextRequest) {
             stockId: true,
             dividedId: true,
           },
-        },
+        }
       },
     });
     
@@ -144,18 +176,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: 'Order not found' },
         { status: 404 }
-      );
-    }
-    
-    // Check if order is already shipped
-    const existingShipment = await prisma.shipment.findFirst({
-      where: { orderId: id },
-    });
-    
-    if (existingShipment) {
-      return NextResponse.json(
-        { error: 'Order has already been shipped' },
-        { status: 400 }
       );
     }
     

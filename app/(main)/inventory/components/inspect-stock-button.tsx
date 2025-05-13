@@ -21,9 +21,10 @@ import i18nInstance from "@/app/i18n";
 interface InspectStockButtonProps {
   stock: Stock;
   disabled?: boolean;
+  onInspect?: () => void;
 }
 
-export function InspectStockButton({ stock, disabled }: InspectStockButtonProps) {
+export function InspectStockButton({ stock, disabled, onInspect }: InspectStockButtonProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState("");
@@ -61,7 +62,14 @@ export function InspectStockButton({ stock, disabled }: InspectStockButtonProps)
       });
 
       setOpen(false);
-      router.refresh();
+      
+      // Call the onInspect callback if provided for immediate UI update
+      if (onInspect) {
+        onInspect();
+      } else {
+        // Fall back to router.refresh() if no callback is provided
+        router.refresh();
+      }
     } catch (error) {
       console.error("Error inspecting stock:", error);
       toast({

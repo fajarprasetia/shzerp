@@ -24,8 +24,35 @@ import i18nInstance from "@/app/i18n";
 import { getColumns, OrderViewDialog } from "./columns";
 import { I18nProvider } from './components/i18n-provider';
 
-// Update interface to match OrderWithRelations in columns.tsx
+// Use this interface for our OrderWithCustomer
 interface OrderWithCustomer {
+  id: string;
+  orderNo: string;
+  customerId: string;
+  sales: string;
+  type: string;
+  totalAmount: number;
+  tax: number;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+  customer: {
+    name: string;
+    company: string;
+  };
+  orderItems: any[];
+  note: string | null;
+  paymentStatus: string | null;
+  paymentImage: string | null;
+  paymentMethod: string | null;
+  reference: string | null;
+  journalEntryId: string | null;
+  discount: number;
+  discountType: "percentage" | "value";
+}
+
+// Define OrderWithRelations for columns
+interface OrderWithRelations {
   id: string;
   orderNo: string;
   customerId: string;
@@ -106,8 +133,13 @@ function OrdersPage() {
     setShowForm(true);
   };
   
-  const columns: ColumnDef<OrderWithCustomer>[] = useMemo(() => 
-    getColumns(t, toast, handleEditOrder, handleViewOrder), 
+  // Cast the handleView/Edit functions to match the expected type in getColumns
+  const handleEditForColumns = (order: any) => handleEditOrder(order as OrderWithCustomer);
+  const handleViewForColumns = (order: any) => handleViewOrder(order as OrderWithCustomer);
+  
+  // Using 'any' type to avoid circular references
+  const columns: any = useMemo(() => 
+    getColumns(t, toast, handleEditForColumns, handleViewForColumns), 
     [t, toast, handleEditOrder, handleViewOrder]
   );
 
@@ -128,7 +160,8 @@ function OrdersPage() {
         data
       });
 
-      const response = await fetch(url, {
+      // First attempt
+      let response = await fetch(url, {
         method: selectedOrder ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,18 +169,47 @@ function OrdersPage() {
         body: JSON.stringify(data),
       });
 
-      const responseData = await response.json();
+      let responseData = await response.json();
       console.log('[handleFormSubmit] API response:', {
         status: response.status,
         data: responseData
       });
 
+      // If there was a unique constraint error, try one more time
+      if (!response.ok && responseData.details?.includes('Unique constraint failed')) {
+        console.log('[handleFormSubmit] Detected unique constraint error, retrying...');
+        
+        // Wait a moment before retrying
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Second attempt
+        response = await fetch(url, {
+          method: selectedOrder ? 'PUT' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data),
+        });
+        
+        responseData = await response.json();
+        console.log('[handleFormSubmit] Retry API response:', {
+          status: response.status,
+          data: responseData
+        });
+      }
+
       if (!response.ok) {
-        throw new Error(
-          responseData.details || 
-          responseData.error || 
-          `Failed to save order: ${response.status}`
-        );
+        // Format a more user-friendly error message
+        let errorMessage = responseData.error || `Failed to save order: ${response.status}`;
+        
+        // Handle specific error types
+        if (responseData.details?.includes('Unique constraint failed')) {
+          errorMessage = 'Order number already exists. Please try again.';
+        } else if (responseData.details) {
+          errorMessage = `${errorMessage}: ${responseData.details}`;
+        }
+        
+        throw new Error(errorMessage);
       }
 
       toast({

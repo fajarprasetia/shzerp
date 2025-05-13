@@ -3,7 +3,7 @@ import { Order } from "@prisma/client";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Eye, MoreVertical, MoreHorizontal, FileText, Printer, FileSpreadsheet, FileImage, RefreshCcw, Pencil } from "lucide-react";
+import { Eye, MoreVertical, MoreHorizontal, FileText, Trash2, Pencil } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { OrderForm } from "./components/order-form";
 import { useState } from "react";
 import { OrderDetails } from "./components/order-details";
@@ -147,7 +147,8 @@ export function getColumns(
       id: "actions",
       cell: ({ row }) => {
         const order = row.original;
-        const [showDateDialog, setShowDateDialog] = useState<null | 'generate' | 'print'>(null);
+        const [showDateDialog, setShowDateDialog] = useState<null | 'generate'>(null);
+        const [showDeleteDialog, setShowDeleteDialog] = useState(false);
         const [selectedDate, setSelectedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
         const [loading, setLoading] = useState(false);
 
@@ -169,12 +170,19 @@ export function getColumns(
               throw new Error(data.error || 'Failed to generate invoice');
             }
 
+            // Show different message based on whether invoice was created or updated
+            const isUpdate = data.action === 'update';
             toast({
               title: t('common.success', 'Success'),
-              description: t('sales.orders.invoiceSuccess', 'Invoice generated successfully'),
+              description: isUpdate 
+                ? t('sales.orders.invoiceUpdated', 'Invoice updated successfully') 
+                : t('sales.orders.invoiceSuccess', 'Invoice generated successfully'),
               variant: "default"
             });
             setShowDateDialog(null);
+            
+            // Refresh the page to reflect changes
+            window.location.reload();
           } catch (error) {
             console.error('Error generating invoice:', error);
             toast({
@@ -187,44 +195,40 @@ export function getColumns(
           }
         };
 
-        const handlePrintInvoice = async (dateOverride?: string) => {
+        const handleDeleteOrder = async () => {
           try {
             setLoading(true);
-            // Fetch the invoice for this order
-            const res = await fetch(`/api/sales/invoices?orderId=${order.id}`);
-            const invoices = await res.json();
-            if (!Array.isArray(invoices) || invoices.length === 0) {
-              toast({
-                title: t('common.error', 'Error'),
-                description: t('sales.orders.noInvoice', 'No invoice found for this order.'),
-                variant: 'destructive',
-              });
-              return;
-            }
-            const invoice = invoices[0];
-            // Use the same structure as generateInvoicePDF expects
-            const pdfBuffer = await generateInvoicePDF({
-              id: invoice.orderId,
-              orderNo: invoice.order?.orderNo || invoice.invoiceNo.replace('INV-', ''),
-              customerId: invoice.customerId,
-              orderItems: invoice.orderItems,
-              totalAmount: invoice.totalAmount,
-              discount: invoice.discount || 0,
-              createdAt: dateOverride ? new Date(dateOverride) : invoice.createdAt,
+            
+            // Confirm user wants to proceed with cascade deletion
+            const response = await fetch(`/api/sales/orders/${order.id}`, {
+              method: 'DELETE'
             });
-            // Create a blob and open in new window
-            const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
-            window.open(url, '_blank');
-            setShowDateDialog(null);
+            
+            if (!response.ok) {
+              const data = await response.json();
+              throw new Error(data.error || data.details || 'Failed to delete order');
+            }
+            
+            const data = await response.json();
+
+            toast({
+              title: t('common.success', 'Success'),
+              description: data.message || t('sales.orders.deleteSuccess', 'Order deleted successfully'),
+              variant: "default"
+            });
+            
+            // Refresh the page to show updated data
+            window.location.reload();
           } catch (error) {
+            console.error('Error deleting order:', error);
             toast({
               title: t('common.error', 'Error'),
-              description: error instanceof Error ? error.message : t('sales.orders.printInvoiceError', 'Failed to print invoice'),
-              variant: 'destructive',
+              description: error instanceof Error ? error.message : t('sales.orders.deleteError', 'Failed to delete order'),
+              variant: "destructive"
             });
           } finally {
             setLoading(false);
+            setShowDeleteDialog(false);
           }
         };
 
@@ -232,6 +236,8 @@ export function getColumns(
         const hasShipmentItems = order.orderItems?.some(item => item.shipmentItems?.length > 0);
         // Check if order status is PENDING
         const isPending = order.status === "PENDING";
+        // Check if the order has an invoice
+        const hasInvoice = order.journalEntryId !== null;
 
         return (
           <>
@@ -254,17 +260,17 @@ export function getColumns(
                   {t('common.edit', 'Edit')}
                 </DropdownMenuItem>
               )}
-                <DropdownMenuItem onClick={() => setShowDateDialog('generate')}>
+              <DropdownMenuItem onClick={() => setShowDateDialog('generate')}>
                 <FileText className="mr-2 h-4 w-4" />
                 {t('sales.orders.generateInvoice', 'Generate Invoice')}
               </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowDateDialog('print')}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  {t('sales.orders.printInvoice', 'Print Invoice')}
-                </DropdownMenuItem>
-              <DropdownMenuItem>
-                <RefreshCcw className="mr-2 h-4 w-4" />
-                {t('common.refresh', 'Refresh')}
+              {/* Show Delete button for all orders */}
+              <DropdownMenuItem 
+                onClick={() => setShowDeleteDialog(true)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                {t('common.delete', 'Delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -273,9 +279,7 @@ export function getColumns(
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>
-                    {showDateDialog === 'generate'
-                      ? t('sales.orders.selectInvoiceDate', 'Select Invoice Date')
-                      : t('sales.orders.selectPrintDate', 'Select Print Date')}
+                    {t('sales.orders.selectInvoiceDate', 'Select Invoice Date')}
                   </DialogTitle>
                 </DialogHeader>
                 <div className="flex flex-col gap-4 py-2">
@@ -291,19 +295,43 @@ export function getColumns(
                 </div>
                 <DialogFooter>
                   <Button
-                    onClick={() => {
-                      if (showDateDialog === 'generate') handleGenerateInvoice(selectedDate);
-                      else if (showDateDialog === 'print') handlePrintInvoice(selectedDate);
-                    }}
+                    onClick={() => handleGenerateInvoice(selectedDate)}
                     disabled={loading}
                   >
                     {loading
                       ? t('common.loading', 'Loading...')
-                      : showDateDialog === 'generate'
-                        ? t('sales.orders.generateInvoice', 'Generate Invoice')
-                        : t('sales.orders.printInvoice', 'Print Invoice')}
+                      : t('sales.orders.generateInvoice', 'Generate Invoice')}
                   </Button>
                   <Button variant="outline" onClick={() => setShowDateDialog(null)} disabled={loading}>
+                    {t('common.cancel', 'Cancel')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {t('sales.orders.confirmDelete', 'Confirm Delete')}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {t('sales.orders.deleteWarning', 
+                      'Are you sure you want to delete this order? This will also delete all related records including invoices and shipments, and will revert any inventory changes. This action cannot be undone.')}
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDeleteOrder}
+                    disabled={loading}
+                  >
+                    {loading
+                      ? t('common.loading', 'Loading...')
+                      : t('common.delete', 'Delete')}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowDeleteDialog(false)} disabled={loading}>
                     {t('common.cancel', 'Cancel')}
                   </Button>
                 </DialogFooter>

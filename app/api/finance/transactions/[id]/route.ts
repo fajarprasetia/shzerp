@@ -3,11 +3,14 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const transaction = await prisma.transaction.findUnique({
-      where: { id: params.id },
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+          where: { id: id },
     });
 
     if (!transaction) {
@@ -29,14 +32,14 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const data = await request.json();
     const { type, amount, description, category, date, notes } = data;
 
     const transaction = await prisma.transaction.update({
-      where: { id: params.id },
+      where: { id: id },
       data: {
         ...(type && { type }),
         ...(amount && { amount }),
@@ -59,11 +62,11 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await prisma.transaction.delete({
-      where: { id: params.id },
+      where: { id: id },
     });
 
     return new NextResponse(null, { status: 204 });

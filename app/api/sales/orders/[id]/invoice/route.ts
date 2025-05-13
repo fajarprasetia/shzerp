@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
 
-// POST /api/sales/orders/[id]/invoice - Generate invoice from order
+// POST /api/sales/orders/[id]/invoice - Generate or update invoice from order
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Check for X-Debug-Mode header
@@ -19,7 +19,28 @@ export async function POST(
       }
     }
 
-    const orderId = params.id;
+    // Parse request body to get invoice date if provided
+    let requestBody: { invoiceDate?: string } = {};
+    try {
+      const bodyText = await request.text();
+      if (bodyText) {
+        requestBody = JSON.parse(bodyText);
+      }
+    } catch (e) {
+      console.warn('Failed to parse request body:', e);
+    }
+    
+    // Extract invoiceDate from request body
+    const invoiceDate = requestBody?.invoiceDate 
+      ? new Date(requestBody.invoiceDate) 
+      : new Date();
+      
+    console.log('Using invoice date:', invoiceDate);
+
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+        const orderId = id;
     console.log('Generating invoice for order:', orderId);
 
     // Check if order exists and get its details
@@ -49,42 +70,84 @@ export async function POST(
       orderNo: order.orderNo,
       customerId: order.customerId,
       itemCount: order.orderItems.length,
-      existingInvoices: order.invoices.length
+      existingInvoices: order.invoices.length,
+      totalAmount: order.totalAmount,
+      discount: order.discount,
+      discountType: order.discountType
     });
 
-    // Check if invoice already exists
-    if (order.invoices.length > 0) {
-      console.log('Invoice already exists for order:', orderId);
-      return NextResponse.json(
-        { error: 'Invoice already exists for this order' },
-        { status: 400 }
-      );
-    }
-
-    // Calculate total amount from order items if not set on order
-    const calculatedTotalAmount = order.orderItems.reduce((sum, item) => {
-      const itemTotal = (item.price * item.quantity) + (item.tax || 0);
-      console.log('Item total calculation:', {
-        itemId: item.id,
-        price: item.price,
-        quantity: item.quantity,
-        tax: item.tax,
-        total: itemTotal
-      });
-      return sum + itemTotal;
-    }, 0);
+    // Use the totalAmount directly - it already has the discount applied
+    const finalTotal = order.totalAmount;
+    
+    console.log('Using final total for invoice:', finalTotal);
 
     // For existing orders with payment proof, use their status
     const paymentStatus = order.paymentImage ? "PAID" : "PENDING";
-    const totalAmount = order.totalAmount || calculatedTotalAmount;
     
-    console.log('Creating invoice with data:', {
+    // Check if invoice already exists and update it instead of creating a new one
+    if (order.invoices.length > 0) {
+      console.log('Invoice already exists for order, updating:', orderId);
+      const existingInvoice = order.invoices[0];
+      
+      // Update the AR record associated with this invoice if it exists
+      if (existingInvoice.accountsReceivableId) {
+        await prisma.accountsReceivable.update({
+          where: {
+            id: existingInvoice.accountsReceivableId
+          },
+          data: {
+            totalAmount: finalTotal,
+            paidAmount: paymentStatus === "PAID" ? finalTotal : 0,
+            status: paymentStatus === "PAID" ? "CLOSED" : "OPEN",
+            updatedAt: invoiceDate,
+          }
+        });
+      }
+      
+      // Update the invoice with new values
+      const updatedInvoice = await prisma.invoice.update({
+        where: {
+          id: existingInvoice.id
+        },
+        data: {
+          totalAmount: finalTotal,
+          paymentStatus: paymentStatus,
+          paymentDate: paymentStatus === "PAID" ? invoiceDate : null,
+          paymentImage: order.paymentImage || null,
+          paymentMethod: order.paymentMethod || "Bank Transfer",
+          reference: order.reference || null,
+          updatedAt: invoiceDate,
+        }
+      });
+      
+      console.log('Successfully updated invoice:', updatedInvoice.id);
+      
+      return new NextResponse(
+        JSON.stringify({
+          success: true,
+          message: 'Successfully updated invoice for order',
+          invoice: updatedInvoice,
+          action: 'update'
+        }),
+        { 
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Mode': 'true'
+          }
+        }
+      );
+    }
+    
+    // If no existing invoice, create a new one
+    console.log('Creating new invoice with data:', {
       invoiceNo: `INV-${order.orderNo}`,
       orderId: order.id,
       customerId: order.customerId,
       customerName: order.customer.name,
-      totalAmount,
-      paymentStatus
+      totalAmount: finalTotal,
+      paymentStatus,
+      invoiceDate
     });
 
     // First, create or update the accounts receivable record
@@ -96,15 +159,18 @@ export async function POST(
       create: {
         id: arId,
         customerId: order.customerId,
-        totalAmount: totalAmount,
-        paidAmount: paymentStatus === "PAID" ? totalAmount : 0,
+        totalAmount: finalTotal,
+        paidAmount: paymentStatus === "PAID" ? finalTotal : 0,
         status: paymentStatus === "PAID" ? "CLOSED" : "OPEN",
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+        dueDate: new Date(invoiceDate.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days from invoice date
+        createdAt: invoiceDate,
+        updatedAt: invoiceDate
       },
       update: {
-        totalAmount: { increment: totalAmount },
-        paidAmount: paymentStatus === "PAID" ? { increment: totalAmount } : undefined,
+        totalAmount: { increment: finalTotal },
+        paidAmount: paymentStatus === "PAID" ? { increment: finalTotal } : undefined,
         status: paymentStatus === "PAID" ? "CLOSED" : "OPEN",
+        updatedAt: invoiceDate
       }
     });
 
@@ -116,13 +182,15 @@ export async function POST(
         customerId: order.customerId,
         customerName: order.customer.name,
         customerAddress: order.customer.address || "",
-        totalAmount: totalAmount,
+        totalAmount: finalTotal,
         paymentStatus: paymentStatus,
-        paymentDate: paymentStatus === "PAID" ? new Date() : null,
+        paymentDate: paymentStatus === "PAID" ? invoiceDate : null,
         paymentImage: order.paymentImage || null,
         paymentMethod: order.paymentMethod || "Bank Transfer",
         reference: order.reference || null,
-        accountsReceivableId: accountsReceivable.id // Connect to the AR record
+        accountsReceivableId: accountsReceivable.id, // Connect to the AR record
+        createdAt: invoiceDate,
+        updatedAt: invoiceDate
       }
     });
 
@@ -133,7 +201,8 @@ export async function POST(
       JSON.stringify({
         success: true,
         message: 'Successfully generated invoice from order',
-        invoice
+        invoice,
+        action: 'create'
       }),
       { 
         status: 200,

@@ -3,11 +3,15 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+    
     const stock = await prisma.stock.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!stock) {
@@ -23,14 +27,18 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+    
     const data = await request.json();
 
     // Check if stock exists
     const existingStock = await prisma.stock.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!existingStock) {
@@ -39,7 +47,7 @@ export async function PUT(
 
     const stock = await prisma.stock.update({
       where: {
-        id: params.id,
+        id,
       },
       data: {
         type: data.type,
@@ -62,12 +70,16 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+    
     await prisma.stock.delete({
       where: {
-        id: params.id,
+        id,
       },
     });
 
@@ -75,5 +87,44 @@ export async function DELETE(
   } catch (error) {
     console.error("Error deleting stock:", error);
     return NextResponse.json({ error: "Error deleting stock" }, { status: 500 });
+  }
+}
+
+// Add PATCH endpoint for updating just the remaining length
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+    
+    const data = await request.json();
+    
+    // Check if remainingLength is provided
+    if (data.remainingLength === undefined) {
+      return NextResponse.json(
+        { error: "Remaining length is required" }, 
+        { status: 400 }
+      );
+    }
+
+    // Update only the remainingLength field
+    const stock = await prisma.stock.update({
+      where: { id },
+      data: { 
+        remainingLength: data.remainingLength,
+        updatedAt: new Date()
+      },
+    });
+
+    return NextResponse.json(stock);
+  } catch (error) {
+    console.error("Error updating remaining length:", error);
+    return NextResponse.json(
+      { error: "Error updating remaining length" }, 
+      { status: 500 }
+    );
   }
 } 

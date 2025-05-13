@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -15,7 +15,10 @@ export async function PUT(
       );
     }
 
-    const id = await Promise.resolve(params.id);
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+        const id = await Promise.resolve(id);
     const data = await request.json();
 
     // Check if task exists first
@@ -143,7 +146,7 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -154,7 +157,7 @@ export async function DELETE(
       );
     }
 
-    const id = await Promise.resolve(params.id);
+    const id = await Promise.resolve(id);
 
     // Check if task exists
     const existingTask = await prisma.task.findUnique({

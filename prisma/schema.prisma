@@ -203,9 +203,9 @@ model Order {
 }
 
 model OrderItem {
-  id            String         @id @default(cuid())
+  id            String          @id @default(cuid())
   orderId       String
-  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   type          String
   product       String?
   gsm           String?
@@ -219,6 +219,8 @@ model OrderItem {
   stock         Stock?         @relation(fields: [stockId], references: [id])
   dividedId     String?
   divided       Divided?       @relation(fields: [dividedId], references: [id])
+  scannedCount  Int            @default(0)
+  scannedBarcodes String[]     @default([])
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   shipmentItems ShipmentItem[]
@@ -571,6 +573,7 @@ model Shipment {
   shippedBy     String
   shippedByUser User            @relation(fields: [shippedBy], references: [id])
   notes         String?
+  status        ShipmentStatus  @default(IN_PROGRESS)
   shipmentItems ShipmentItem[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -640,4 +643,10 @@ model AccountsReceivable {
   
   @@index([customerId])
   @@index([status])
+}
+
+enum ShipmentStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }

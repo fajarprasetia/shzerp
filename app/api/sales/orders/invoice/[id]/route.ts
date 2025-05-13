@@ -5,11 +5,14 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const order = await prisma.order.findUnique({
-      where: { id: params.id },
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+          where: { id: id },
       include: {
         customer: true,
         divided: {

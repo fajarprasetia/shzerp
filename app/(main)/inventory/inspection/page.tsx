@@ -18,6 +18,7 @@ import {
 import { useTranslation } from "react-i18next";
 // Import pre-initialized i18n instance
 import i18nInstance from "@/app/i18n";
+import { Stock, Divided } from "@prisma/client";
 
 export default function InspectionPage() {
   const { 
@@ -37,6 +38,40 @@ export default function InspectionPage() {
   const { t, i18n } = useTranslation(undefined, { i18n: i18nInstance });
   const [mounted, setMounted] = useState(false);
 
+  // Local state for optimistic UI updates
+  const [localUninspectedStock, setLocalUninspectedStock] = useState<Stock[]>([]);
+  const [localUninspectedDivided, setLocalUninspectedDivided] = useState<Divided[]>([]);
+  
+  // Initialize local state with data from the hook
+  useEffect(() => {
+    if (uninspectedStock && uninspectedStock.length > 0) {
+      setLocalUninspectedStock(uninspectedStock);
+    }
+    if (uninspectedDivided && uninspectedDivided.length > 0) {
+      setLocalUninspectedDivided(uninspectedDivided);
+    }
+  }, []);  // Run only once on component mount
+
+  // Separate effect to update local state when data changes from the server
+  // Only run when uninspectedStock/uninspectedDivided change AND
+  // when the length differs from local state (to avoid infinite loops)
+  useEffect(() => {
+    const shouldUpdateStock = uninspectedStock && 
+      localUninspectedStock.length !== uninspectedStock.length;
+    
+    const shouldUpdateDivided = uninspectedDivided && 
+      localUninspectedDivided.length !== uninspectedDivided.length;
+    
+    if (shouldUpdateStock) {
+      setLocalUninspectedStock(uninspectedStock);
+    }
+    
+    if (shouldUpdateDivided) {
+      setLocalUninspectedDivided(uninspectedDivided);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uninspectedStock?.length, uninspectedDivided?.length]);
+
   // Effect to handle mounting and debug i18n state
   useEffect(() => {
     setMounted(true);
@@ -49,6 +84,38 @@ export default function InspectionPage() {
     });
   }, [i18n]);
 
+  // Handle inspecting a stock item from the UI
+  const handleInspectStock = (stockId: string) => {
+    // Optimistically update the local state
+    setLocalUninspectedStock(prev => prev.filter(item => item.id !== stockId));
+    
+    // Get the stock item that was just inspected for the success dialog
+    const inspectedStock = uninspectedStock.find(stock => stock.id === stockId);
+    if (inspectedStock) {
+      setLastInspectedItem(inspectedStock.jumboRollNo);
+      setShowSuccessDialog(true);
+    }
+    
+    // Also update the remote data through SWR
+    mutate();
+  };
+  
+  // Handle inspecting a divided item from the UI
+  const handleInspectDivided = (dividedId: string) => {
+    // Optimistically update the local state
+    setLocalUninspectedDivided(prev => prev.filter(item => item.id !== dividedId));
+    
+    // Get the divided item that was just inspected for the success dialog
+    const inspectedDivided = uninspectedDivided.find(item => item.id === dividedId);
+    if (inspectedDivided) {
+      setLastInspectedItem(inspectedDivided.rollNo);
+      setShowSuccessDialog(true);
+    }
+    
+    // Also update the remote data through SWR
+    mutate();
+  };
+
   // Debug logging
   useEffect(() => {
     console.log("Inspection data:", {
@@ -60,6 +127,14 @@ export default function InspectionPage() {
     });
   }, [uninspectedStock, uninspectedDivided, logs, isLoading, isError]);
 
+  // Effect to refresh data when success dialog is closed
+  useEffect(() => {
+    if (!showSuccessDialog && lastInspectedItem) {
+      // Refresh data when dialog is dismissed
+      mutate();
+    }
+  }, [showSuccessDialog, lastInspectedItem, mutate]);
+
   const handleScanBarcode = async () => {
     setIsScanning(true);
     try {
@@ -69,23 +144,25 @@ export default function InspectionPage() {
         const scannedBarcode = result.data;
         console.log("Scanned barcode:", scannedBarcode);
         
-        // Check if the barcode matches any stock items
-        const stockMatch = uninspectedStock.find(
+        // Check if the barcode matches any stock items using local state
+        const stockMatch = localUninspectedStock.find(
           stock => stock.jumboRollNo === scannedBarcode || stock.barcodeId === scannedBarcode
         );
         
-        // Check if the barcode matches any divided items
-        const dividedMatch = uninspectedDivided.find(
+        // Check if the barcode matches any divided items using local state
+        const dividedMatch = localUninspectedDivided.find(
           divided => divided.rollNo === scannedBarcode || divided.barcodeId === scannedBarcode
         );
         
         if (stockMatch) {
-          // Inspect the stock item
+          // Optimistically update local state
+          setLocalUninspectedStock(prev => prev.filter(item => item.id !== stockMatch.id));
           await inspectStockItem(stockMatch.id);
           setLastInspectedItem(stockMatch.jumboRollNo);
           setShowSuccessDialog(true);
         } else if (dividedMatch) {
-          // Inspect the divided item
+          // Optimistically update local state
+          setLocalUninspectedDivided(prev => prev.filter(item => item.id !== dividedMatch.id));
           await inspectDividedItem(dividedMatch.id);
           setLastInspectedItem(dividedMatch.rollNo);
           setShowSuccessDialog(true);
@@ -105,6 +182,7 @@ export default function InspectionPage() {
 
   const inspectStockItem = async (stockId: string) => {
     try {
+      // The optimistic update is now handled by the caller
       const response = await fetch("/api/inventory/inspection/stock", {
         method: "POST",
         headers: {
@@ -118,11 +196,16 @@ export default function InspectionPage() {
 
       if (!response.ok) {
         const data = await response.json();
+        // In case of error, we need to refresh the data
+        mutate();
         throw new Error(data.error || t('inventory.inspection.stockInspectError', 'Failed to inspect stock'));
       }
 
-      // Refresh the data
-      await mutate();
+      // Refresh the data after success
+      mutate();
+      
+      // Show success toast
+      toast.success(t('inventory.inspection.stockInspectSuccess', 'Stock item successfully inspected'));
       return true;
     } catch (error) {
       console.error("Error inspecting stock:", error);
@@ -133,6 +216,7 @@ export default function InspectionPage() {
 
   const inspectDividedItem = async (dividedId: string) => {
     try {
+      // The optimistic update is now handled by the caller
       const response = await fetch("/api/inventory/inspection/divided", {
         method: "POST",
         headers: {
@@ -146,11 +230,16 @@ export default function InspectionPage() {
 
       if (!response.ok) {
         const data = await response.json();
+        // In case of error, we need to refresh the data
+        mutate();
         throw new Error(data.error || t('inventory.inspection.dividedInspectError', 'Failed to inspect divided stock'));
       }
 
-      // Refresh the data
-      await mutate();
+      // Refresh the data after success
+      mutate();
+      
+      // Show success toast
+      toast.success(t('inventory.inspection.dividedInspectSuccess', 'Divided stock item successfully inspected'));
       return true;
     } catch (error) {
       console.error("Error inspecting divided stock:", error);
@@ -161,6 +250,8 @@ export default function InspectionPage() {
 
   const scanMore = () => {
     setShowSuccessDialog(false);
+    // Explicitly refresh data before scanning again
+    mutate();
     handleScanBarcode();
   };
 
@@ -225,8 +316,10 @@ export default function InspectionPage() {
             </p>
           </div>
           <InspectionTable 
-            stocks={uninspectedStock} 
-            divided={uninspectedDivided} 
+            stocks={localUninspectedStock} 
+            divided={localUninspectedDivided}
+            onInspectStock={handleInspectStock}
+            onInspectDivided={handleInspectDivided}
           />
         </div>
       </div>

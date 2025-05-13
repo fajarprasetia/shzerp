@@ -1,6 +1,7 @@
 import { Stock, Divided } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import jsQR from "jsqr";
+import { BrowserMultiFormatReader, Result, BarcodeFormat, Exception } from '@zxing/library';
 
 export interface ScanBarcodeResult {
   success: boolean;
@@ -14,193 +15,253 @@ export interface CameraDevice {
   facingMode?: string;
 }
 
-export async function scanBarcode(useBackCamera: boolean = true): Promise<ScanBarcodeResult> {
-  try {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      return {
-        success: false,
-        data: "",
-        error: "Camera access is not supported in this browser"
-      };
-    }
+export interface ScanOptions {
+  tryHarder?: boolean;
+  timeout?: number;
+  scanInterval?: number;
+  enableProgressBar?: boolean;
+  showCameraSelection?: boolean;
+}
 
-    // Request camera access with specified camera preference
-    const facingMode = useBackCamera ? "environment" : "user";
-    const constraints = {
-      video: { 
-        facingMode,
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      }
-    };
-
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-
-    // Create video element
-    const video = document.createElement("video");
-    video.srcObject = stream;
-    video.setAttribute("playsinline", "true"); // Required for iOS Safari
-    
-    // Create scanning element container
-    const scannerContainer = document.createElement("div");
-    scannerContainer.style.position = "fixed";
-    scannerContainer.style.top = "0";
-    scannerContainer.style.left = "0";
-    scannerContainer.style.width = "100%";
-    scannerContainer.style.height = "100%";
-    scannerContainer.style.zIndex = "9999";
-    scannerContainer.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
-    scannerContainer.style.display = "flex";
-    scannerContainer.style.flexDirection = "column";
-    scannerContainer.style.justifyContent = "center";
-    scannerContainer.style.alignItems = "center";
-    
-    // Create video container with scanning overlay
-    const videoContainer = document.createElement("div");
-    videoContainer.style.position = "relative";
-    videoContainer.style.width = "80%";
-    videoContainer.style.maxWidth = "400px";
-    videoContainer.style.aspectRatio = "1";
-    videoContainer.style.border = "2px solid white";
-    videoContainer.style.borderRadius = "8px";
-    videoContainer.style.overflow = "hidden";
-    
-    // Create scanning line animation
-    const scanLine = document.createElement("div");
-    scanLine.style.position = "absolute";
-    scanLine.style.left = "0";
-    scanLine.style.width = "100%";
-    scanLine.style.height = "2px";
-    scanLine.style.backgroundColor = "red";
-    scanLine.style.animation = "scan 2s infinite linear";
-    
-    // Add animation keyframes
-    const style = document.createElement("style");
-    style.textContent = `
-      @keyframes scan {
-        0% { top: 0; }
-        50% { top: 100%; }
-        100% { top: 0; }
-      }
-    `;
-    document.head.appendChild(style);
-    
-    // Create canvas for capturing frames
-    const canvas = document.createElement("canvas");
-    const canvasContext = canvas.getContext("2d", { willReadFrequently: true });
-    
-    // Create cancel button
-    const cancelButton = document.createElement("button");
-    cancelButton.textContent = "Cancel";
-    cancelButton.style.marginTop = "20px";
-    cancelButton.style.padding = "10px 20px";
-    cancelButton.style.border = "none";
-    cancelButton.style.borderRadius = "4px";
-    cancelButton.style.backgroundColor = "white";
-    cancelButton.style.color = "black";
-    cancelButton.style.cursor = "pointer";
-    
-    // Add elements to DOM
-    videoContainer.appendChild(video);
-    videoContainer.appendChild(scanLine);
-    scannerContainer.appendChild(videoContainer);
-    scannerContainer.appendChild(cancelButton);
-    document.body.appendChild(scannerContainer);
-    
-    // Set up promise to resolve with scanned barcode
-    return new Promise((resolve) => {
-      // Handle cancel button
-      cancelButton.onclick = () => {
-        cleanup();
+export async function scanBarcode(useBackCamera: boolean = true, options?: ScanOptions): Promise<ScanBarcodeResult> {
+  return new Promise((resolve) => {
+    try {
+      // Create modal container
+      const modalContainer = document.createElement('div');
+      modalContainer.style.position = 'fixed';
+      modalContainer.style.top = '0';
+      modalContainer.style.left = '0';
+      modalContainer.style.width = '100%';
+      modalContainer.style.height = '100%';
+      modalContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+      modalContainer.style.zIndex = '9999';
+      modalContainer.style.display = 'flex';
+      modalContainer.style.flexDirection = 'column';
+      modalContainer.style.justifyContent = 'center';
+      modalContainer.style.alignItems = 'center';
+      
+      // Create video element for preview
+      const previewElem = document.createElement('video');
+      previewElem.style.maxWidth = '90%';
+      previewElem.style.maxHeight = '70%';
+      previewElem.style.borderRadius = '8px';
+      previewElem.style.border = '2px solid #444';
+      previewElem.style.backgroundColor = '#000';
+      
+      // Create scanning guide overlay
+      const overlay = document.createElement('div');
+      overlay.style.position = 'absolute';
+      overlay.style.width = '80%';
+      overlay.style.height = '80%';
+      overlay.style.maxWidth = '500px';
+      overlay.style.maxHeight = '400px';
+      overlay.style.border = '2px dashed #fff';
+      overlay.style.borderRadius = '8px';
+      overlay.style.boxSizing = 'border-box';
+      overlay.style.pointerEvents = 'none';
+      
+      // Create scan line animation
+      const scanLine = document.createElement('div');
+      scanLine.style.position = 'absolute';
+      scanLine.style.width = '100%';
+      scanLine.style.height = '2px';
+      scanLine.style.background = 'red';
+      scanLine.style.animation = 'scan-line-animation 2s infinite';
+      
+      // Add scan line animation style
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes scan-line-animation {
+          0% { transform: translateY(-100px); }
+          50% { transform: translateY(100px); }
+          100% { transform: translateY(-100px); }
+        }
+      `;
+      document.head.appendChild(style);
+      
+      overlay.appendChild(scanLine);
+      
+      // Create instruction text
+      const instruction = document.createElement('div');
+      instruction.textContent = 'Position barcode inside the box';
+      instruction.style.color = 'white';
+      instruction.style.marginTop = '20px';
+      instruction.style.fontSize = '16px';
+      instruction.style.fontWeight = 'bold';
+      
+      // Create close button
+      const closeButton = document.createElement('button');
+      closeButton.textContent = 'Cancel';
+      closeButton.style.marginTop = '20px';
+      closeButton.style.padding = '10px 20px';
+      closeButton.style.backgroundColor = '#f44336';
+      closeButton.style.color = 'white';
+      closeButton.style.border = 'none';
+      closeButton.style.borderRadius = '4px';
+      closeButton.style.cursor = 'pointer';
+      
+      // Create manual input button
+      const manualInputButton = document.createElement('button');
+      manualInputButton.textContent = 'Enter Manually';
+      manualInputButton.style.marginTop = '10px';
+      manualInputButton.style.padding = '8px 16px';
+      manualInputButton.style.backgroundColor = '#2196F3';
+      manualInputButton.style.color = 'white';
+      manualInputButton.style.border = 'none';
+      manualInputButton.style.borderRadius = '4px';
+      manualInputButton.style.cursor = 'pointer';
+      
+      // Add elements to modal
+      modalContainer.appendChild(previewElem);
+      modalContainer.appendChild(overlay);
+      modalContainer.appendChild(instruction);
+      modalContainer.appendChild(manualInputButton);
+      modalContainer.appendChild(closeButton);
+      document.body.appendChild(modalContainer);
+      
+      // Initialize barcode reader
+      const codeReader = new BrowserMultiFormatReader();
+      
+      // Handle close button click
+      closeButton.addEventListener('click', () => {
+        cleanupScanner();
         resolve({
           success: false,
           data: "",
-          error: "Scanning cancelled by user"
+          error: 'Scanning cancelled'
         });
-      };
-
-      // Cleanup function
-      const cleanup = () => {
-        cancelAnimation();
-        stream.getTracks().forEach(track => track.stop());
-        if (scannerContainer.parentNode) {
-          scannerContainer.parentNode.removeChild(scannerContainer);
+      });
+      
+      // Handle manual input button click
+      manualInputButton.addEventListener('click', () => {
+        const barcodeInput = window.prompt('Enter barcode manually:');
+        if (barcodeInput && barcodeInput.trim() !== '') {
+          cleanupScanner();
+          resolve({
+            success: true,
+            data: barcodeInput.trim()
+          });
         }
-        document.head.removeChild(style);
+      });
+      
+      // Cleanup function
+      const cleanupScanner = () => {
+        try {
+          codeReader.reset();
+          document.body.removeChild(modalContainer);
+          document.head.removeChild(style);
+        } catch (error) {
+          console.error('Error during scanner cleanup:', error);
+        }
       };
-
-      // Start video
-      video.onloadedmetadata = () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        video.play().catch(err => {
-          cleanup();
+      
+      // Set a timeout based on options or default to 60 seconds
+      const timeoutDuration = options?.timeout || 60000;
+      const timeoutId = setTimeout(() => {
+        cleanupScanner();
+        resolve({
+          success: false,
+          data: "",
+          error: 'Scanning timed out. Please try again or enter manually.'
+        });
+      }, timeoutDuration);
+      
+      // Start the camera
+      const startCamera = async () => {
+        try {
+          // Get available cameras
+          const videoInputDevices = await codeReader.listVideoInputDevices();
+          if (videoInputDevices.length === 0) {
+            throw new Error('No camera found');
+          }
+          
+          // Select appropriate camera based on preference
+          let selectedDeviceId = null;
+          
+          if (useBackCamera) {
+            // Try to find back camera first
+            const backCamera = videoInputDevices.find(device => 
+              device.label.toLowerCase().includes('back') || 
+              device.label.toLowerCase().includes('rear') || 
+              device.label.toLowerCase().includes('environment')
+            );
+            selectedDeviceId = backCamera?.deviceId || null;
+          } else {
+            // Try to find front camera first
+            const frontCamera = videoInputDevices.find(device => 
+              device.label.toLowerCase().includes('front') || 
+              device.label.toLowerCase().includes('user') ||
+              device.label.toLowerCase().includes('face')
+            );
+            selectedDeviceId = frontCamera?.deviceId || null;
+          }
+          
+          // Fall back to first camera if preferred one not found
+          if (!selectedDeviceId && videoInputDevices.length > 0) {
+            selectedDeviceId = videoInputDevices[0].deviceId;
+          }
+          
+          // Start decoding from video device
+          codeReader.decodeFromVideoDevice(
+            selectedDeviceId,
+            previewElem,
+            (result, error) => {
+              if (result) {
+                // Play success beep
+                try {
+                  const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU" + Array(100).join("A"));
+                  beep.volume = 0.2;
+                  beep.play().catch(e => console.log("Couldn't play success sound"));
+                } catch (e) {
+                  console.log("Beep error:", e);
+                }
+                
+                // Flash green success indicator
+                overlay.style.border = '3px solid #4CAF50';
+                instruction.textContent = 'Barcode detected!';
+                instruction.style.color = '#4CAF50';
+                
+                // Clear timeout
+                clearTimeout(timeoutId);
+                
+                // Delay a bit to show success state, then clean up
+                setTimeout(() => {
+                  cleanupScanner();
+                  resolve({
+                    success: true,
+                    data: result.getText()
+                  });
+                }, 500);
+              }
+              
+              if (error && !(error instanceof Exception)) {
+                console.error("Scanning error:", error);
+              }
+            }
+          );
+          
+        } catch (error) {
+          clearTimeout(timeoutId);
+          cleanupScanner();
           resolve({
             success: false,
             data: "",
-            error: `Failed to play video: ${err.message}`
+            error: error instanceof Error ? error.message : 'Failed to start camera'
           });
-        });
-      };
-
-      let animationId: number;
-      const cancelAnimation = () => {
-        if (animationId) {
-          cancelAnimationFrame(animationId);
         }
       };
-
-      // Process video frames
-      const processFrame = () => {
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-          // Draw video frame to canvas
-          canvasContext?.drawImage(video, 0, 0, canvas.width, canvas.height);
-          
-          // Get image data for QR code scanning
-          const imageData = canvasContext?.getImageData(0, 0, canvas.width, canvas.height);
-          
-          if (imageData) {
-            // Try to detect QR code in the image
-            const code = jsQR(imageData.data, imageData.width, imageData.height, {
-              inversionAttempts: "dontInvert",
-            });
-            
-            if (code) {
-              // We found a QR code
-              cleanup();
-              resolve({
-                success: true,
-                data: code.data
-              });
-              return;
-            }
-          }
-        }
-        
-        // Continue scanning
-        animationId = requestAnimationFrame(processFrame);
-      };
-
-      // Start processing frames
-      animationId = requestAnimationFrame(processFrame);
       
-      // Set timeout for scanning (30 seconds)
-      setTimeout(() => {
-        cleanup();
-        resolve({
-          success: false,
-          data: "",
-          error: "Barcode scanning timed out. Please try again."
-        });
-      }, 30000);
-    });
-  } catch (error) {
-    return {
-      success: false,
-      data: "",
-      error: error instanceof Error ? error.message : "Failed to access camera"
-    };
-  }
+      // Start camera access
+      startCamera();
+      
+    } catch (error) {
+      resolve({
+        success: false,
+        data: "",
+        error: error instanceof Error ? error.message : 'Failed to initialize scanner'
+      });
+    }
+  });
 }
 
 export async function generateJumboRollNo(): Promise<string> {

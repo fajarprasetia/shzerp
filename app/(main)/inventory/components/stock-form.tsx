@@ -103,7 +103,11 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
       const result = await scanBarcode(useBackCamera);
       
       if (result.success && result.data) {
-        setFormData(prev => ({ ...prev, barcodeId: result.data }));
+        const scannedData: string = result.data!;
+        setFormData(prev => ({ 
+          ...prev, 
+          barcodeId: scannedData
+        }));
         toast({
           title: t('common.success', 'Success'),
           description: t('inventory.stock.barcodeScanned', 'Barcode scanned successfully!'),

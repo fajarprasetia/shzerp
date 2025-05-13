@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { useDividedData } from "@/hooks/use-divided-data";
+import { useDividedData, DividedWithSoldInfo as HookDividedWithSoldInfo } from "@/hooks/use-divided-data";
 import { DataTable } from "@/components/ui/data-table";
-import { MoreVertical, Plus, Trash2, Printer } from "lucide-react";
+import { MoreVertical, Plus, Trash2, Printer, Edit } from "lucide-react";
 import { format } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
 import { Divided, Stock } from "@prisma/client";
@@ -20,26 +20,32 @@ import {
 import { AddDividedStockDialog } from "../components/add-divided-stock-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTranslation } from "react-i18next";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 // Import pre-initialized i18n instance
 import i18nInstance from "@/app/i18n";
 
-// Update the interface to match what the API actually returns
-interface DividedWithSoldInfo extends Divided {
-  stock?: Stock;
-  stockId: string;  
-  inspectedBy?: {
-    name: string;
-  } | null;
+// Use the interface from the hook with additional fields for our component
+interface ExtendedDividedInfo extends HookDividedWithSoldInfo {
+  stock?: {
+    type: string;
+    gsm: number;
+    arrivalDate?: Date;
+    containerNo?: string;
+  };
   containerNo?: string;
   arrivalDate?: Date;
   inspector?: {
     name: string;
   } | null;
-  // These fields are for sold items
-  isSold: boolean;
-  orderNo?: string;
-  soldDate?: Date;
-  customerName?: string;
   orderItemId?: string;
 }
 
@@ -48,6 +54,10 @@ export default function DividedPage() {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("available");
+  const [isEditWidthDialogOpen, setIsEditWidthDialogOpen] = useState(false);
+  const [selectedDivided, setSelectedDivided] = useState<ExtendedDividedInfo | null>(null);
+  const [newWidth, setNewWidth] = useState<string>("");
+  const [isUpdating, setIsUpdating] = useState(false);
   const { toast } = useToast();
   // Use the pre-initialized i18n instance
   const { t, i18n } = useTranslation(undefined, { i18n: i18nInstance });
@@ -82,6 +92,60 @@ export default function DividedPage() {
     }
     return true;
   });
+  
+  const handleEditWidth = (divided: ExtendedDividedInfo) => {
+    setSelectedDivided(divided);
+    setNewWidth(divided.width.toString());
+    setIsEditWidthDialogOpen(true);
+  };
+  
+  const handleSaveWidth = async () => {
+    if (!selectedDivided || !newWidth) return;
+    
+    const numericWidth = parseFloat(newWidth);
+    if (isNaN(numericWidth) || numericWidth <= 0) {
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('inventory.divided.invalidWidth', 'Please enter a valid width value greater than 0'),
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsUpdating(true);
+    try {
+      const response = await fetch(`/api/inventory/divided/${selectedDivided.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          width: numericWidth
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update width');
+      }
+      
+      // Update successful
+      mutateDivided(); // Refresh data
+      setIsEditWidthDialogOpen(false);
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('inventory.divided.widthUpdated', 'Width updated successfully'),
+      });
+    } catch (error) {
+      console.error('Error updating width:', error);
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('inventory.divided.updateError', 'Failed to update width'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const handleDeleteSelected = async () => {
     if (!selectedRows.length) return;
@@ -147,9 +211,11 @@ export default function DividedPage() {
 
       // Header text - slightly smaller to make room for larger barcode
       doc.setFontSize(11);
-      if (item.stockId !== "current" && item.stock) {
-        doc.text(item.stock.type, 3.5, 0.7, { align: "center" });
-        doc.text(`${item.width} x ${item.length} x ${item.stock.gsm}g`, 3.5, 1.2, { align: "center" });
+      // Use optional chaining and provide fallbacks for potentially undefined properties
+      if (item.stockId !== "current" && (item as ExtendedDividedInfo).stock) {
+        const stockInfo = (item as ExtendedDividedInfo).stock;
+        doc.text(stockInfo?.type || 'Unknown', 3.5, 0.7, { align: "center" });
+        doc.text(`${item.width} x ${item.length} x ${stockInfo?.gsm || '?'}g`, 3.5, 1.2, { align: "center" });
       } else {
         doc.text(`${item.width} x ${item.length}`, 3.5, 1.0, { align: "center" });
       }
@@ -165,7 +231,7 @@ export default function DividedPage() {
     doc.save("divided-labels.pdf");
   };
 
-  const columns: ColumnDef<DividedWithSoldInfo>[] = [
+  const columns: ColumnDef<ExtendedDividedInfo, unknown>[] = [
     {
       id: "select",
       header: ({ table }) => (
@@ -207,21 +273,21 @@ export default function DividedPage() {
       header: t('inventory.divided.type', 'Type'),
       sortingFn: "alphanumeric",
       enableSorting: true,
-      cell: ({ row }) => row.original.stockId === "current" ? t('inventory.divided.current', 'Current') : row.original.stock?.type || '-',
+      cell: ({ row }) => row.original.stockId === "current" ? t('inventory.divided.current', 'Current') : (row.original as ExtendedDividedInfo).stock?.type || '-',
     },
     {
       accessorKey: "gsm",
       header: t('inventory.divided.gsm', 'GSM'),
       sortingFn: "basic",
       enableSorting: true,
-      cell: ({ row }) => row.original.stockId === "current" ? "-" : row.original.stock?.gsm || '-',
+      cell: ({ row }) => row.original.stockId === "current" ? "-" : (row.original as ExtendedDividedInfo).stock?.gsm || '-',
     },
     {
       accessorKey: "containerNo",
       header: t('inventory.divided.containerNo', 'Container No'),
       sortingFn: "alphanumeric",
       enableSorting: true,
-      cell: ({ row }) => row.original.containerNo || row.original.stock?.containerNo || "-",
+      cell: ({ row }) => (row.original as ExtendedDividedInfo).containerNo || (row.original as ExtendedDividedInfo).stock?.containerNo || "-",
     },
     {
       accessorKey: "arrivalDate",
@@ -229,7 +295,7 @@ export default function DividedPage() {
       sortingFn: "datetime",
       enableSorting: true,
       cell: ({ row }) => {
-        const date = row.original.arrivalDate || row.original.stock?.arrivalDate;
+        const date = (row.original as ExtendedDividedInfo).arrivalDate || (row.original as ExtendedDividedInfo).stock?.arrivalDate;
         return date ? format(new Date(date), "dd/MM/yyyy") : "-";
       },
     },
@@ -266,7 +332,7 @@ export default function DividedPage() {
       header: t('inventory.divided.inspectedBy', 'Inspected by'),
       sortingFn: "alphanumeric",
       enableSorting: true,
-      cell: ({ row }) => row.original.inspector?.name || row.original.inspectedBy?.name || "-",
+      cell: ({ row }) => (row.original as ExtendedDividedInfo).inspector?.name || (row.original.inspectedById ? "User" : "-"),
     },
     // Add order information for sold stock
     {
@@ -279,7 +345,7 @@ export default function DividedPage() {
           <div className="text-xs">
             <div>{t('inventory.divided.order', 'Order')}: {divided.orderNo}</div>
             <div>{t('inventory.divided.date', 'Date')}: {divided.soldDate ? format(new Date(divided.soldDate), "PPP") : "-"}</div>
-            <div>{t('inventory.divided.customer', 'Customer')}: {divided.customerName || "-"}</div>
+            <div>{t('inventory.divided.customer', 'Customer')}: {(divided as ExtendedDividedInfo).customerName || "-"}</div>
           </div>
         ) : "-";
       },
@@ -304,6 +370,11 @@ export default function DividedPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => handleEditWidth(row.original)}
+              >
+                {t('inventory.divided.editWidth', 'Edit Width')}
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={async () => {
                   if (confirm(t('inventory.divided.confirmDeleteItem', 'Are you sure you want to delete this item?'))) {
@@ -405,6 +476,44 @@ export default function DividedPage() {
           />
         </TabsContent>
       </Tabs>
+      
+      {/* Edit Width Dialog */}
+      <Dialog open={isEditWidthDialogOpen} onOpenChange={setIsEditWidthDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>{t('inventory.divided.editWidth', 'Edit Width')}</DialogTitle>
+            <DialogDescription>
+              {t('inventory.divided.editWidthDescription', 'Update the width for divided roll: ')} 
+              {selectedDivided?.rollNo}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="width" className="text-right">
+                {t('inventory.divided.width', 'Width')}
+              </Label>
+              <Input
+                id="width"
+                type="number"
+                step="0.01"
+                min="1"
+                value={newWidth}
+                onChange={(e) => setNewWidth(e.target.value)}
+                className="col-span-3"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              type="submit" 
+              onClick={handleSaveWidth}
+              disabled={isUpdating}
+            >
+              {isUpdating ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

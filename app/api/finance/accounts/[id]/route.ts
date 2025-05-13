@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -14,7 +14,10 @@ export async function GET(
 
     const account = await prisma.account.findUnique({
       where: {
-        id: params.id
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+            id: id
       }
     });
 
@@ -31,7 +34,7 @@ export async function GET(
 
 export async function PUT(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -59,7 +62,7 @@ export async function PUT(
       where: {
         code,
         NOT: {
-          id: params.id
+          id: id
         }
       }
     });
@@ -70,7 +73,7 @@ export async function PUT(
 
     const account = await prisma.account.update({
       where: {
-        id: params.id
+        id: id
       },
       data: {
         code,
@@ -92,7 +95,7 @@ export async function PUT(
 
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -103,7 +106,7 @@ export async function DELETE(
     // Check if account has any journal entries
     const hasJournalEntries = await prisma.journalEntryItem.findFirst({
       where: {
-        accountId: params.id
+        accountId: id
       }
     });
 
@@ -117,7 +120,7 @@ export async function DELETE(
     // Check if account has any child accounts
     const hasChildren = await prisma.account.findFirst({
       where: {
-        parentId: params.id
+        parentId: id
       }
     });
 
@@ -130,7 +133,7 @@ export async function DELETE(
 
     await prisma.account.delete({
       where: {
-        id: params.id
+        id: id
       }
     });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useStockData, StockWithInspector } from "@/hooks/use-stock-data";
@@ -33,6 +34,7 @@ import i18nInstance from "@/app/i18n";
 export default withPermission(StockPage, "inventory", "read");
 
 function StockPage() {
+  const router = useRouter();
   const { data, isLoading, mutate } = useStockData();
   const [showForm, setShowForm] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockWithInspector | null>(null);
@@ -45,7 +47,7 @@ function StockPage() {
   const [mounted, setMounted] = useState(false);
 
   // Memoize the columns to avoid re-creation on each render
-  const columns = useMemo(() => getColumns(t), [t]);
+  const columns = useMemo(() => getColumns(t, router, undefined, () => mutate()), [t, router, mutate]);
 
   // Effect to handle mounting and debug i18n state
   useEffect(() => {

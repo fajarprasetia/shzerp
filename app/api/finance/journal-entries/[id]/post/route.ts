@@ -10,12 +10,15 @@ interface JournalEntryItem {
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Get the journal entry with its items
     const entry = await prisma.journalEntry.findUnique({
-      where: { id: params.id },
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+          where: { id: id },
       include: {
         items: {
           include: {
@@ -58,7 +61,7 @@ export async function POST(
 
       // Update entry status to POSTED
       const updatedEntry = await prisma.journalEntry.update({
-        where: { id: params.id },
+        where: { id: id },
         data: {
           status: "POSTED",
           postedAt: new Date()

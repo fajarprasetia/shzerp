@@ -11,7 +11,10 @@ export async function GET(req: Request, { params }: RouteParams) {
   try {
     const order = await prisma.order.findUnique({
       where: {
-        id: params.id,
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+            id: id,
       },
       include: {
         customer: {
@@ -50,14 +53,14 @@ export async function PUT(req: Request, { params }: RouteParams) {
     // First, delete existing order items
     await prisma.orderItem.deleteMany({
       where: {
-        orderId: params.id,
+        orderId: id,
       },
     });
 
     // Then update the order with new items
     const order = await prisma.order.update({
       where: {
-        id: params.id,
+        id: id,
       },
       data: {
         ...orderData,
@@ -95,14 +98,14 @@ export async function DELETE(req: Request, { params }: RouteParams) {
     // First delete all order items
     await prisma.orderItem.deleteMany({
       where: {
-        orderId: params.id,
+        orderId: id,
       },
     });
 
     // Then delete the order
     await prisma.order.delete({
       where: {
-        id: params.id,
+        id: id,
       },
     });
 

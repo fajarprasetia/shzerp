@@ -33,9 +33,10 @@ export async function GET(req: NextRequest) {
         }
       : {};
     
-    // Fetch shipments with related data
+    // Fetch only COMPLETED shipments with related data
     const shipments = await prisma.shipment.findMany({
       where: {
+        status: 'COMPLETED', // Only fetch completed shipments
         ...searchFilter,
       },
       include: {
@@ -75,11 +76,13 @@ export async function GET(req: NextRequest) {
       items: shipment.shipmentItems,
       createdAt: shipment.createdAt,
       processedBy: shipment.shippedByUser || { id: '', name: '' },
+      status: shipment.status
     }));
     
-    // Get total count for pagination
+    // Get total count for pagination with the same filter
     const totalShipments = await prisma.shipment.count({
       where: {
+        status: 'COMPLETED', // Only count completed shipments
         ...searchFilter,
       },
     });

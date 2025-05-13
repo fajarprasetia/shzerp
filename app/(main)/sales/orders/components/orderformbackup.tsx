@@ -111,12 +111,16 @@ const formSchema = z.object({
   orderItems: z.array(orderItemSchema).min(1, "At least one item is required"),
   note: z.string().optional(),
   discount: z.number().min(0, "Discount must be greater than or equal to 0").default(0),
+  discountType: z.enum(["percentage", "value"]).default("percentage"),
 }).refine((data) => {
-  // Keep discount validation simple since we only use value-based discount now
-  return data.discount >= 0;
+  // When discount type is percentage, value must be between 0 and 100
+  if (data.discountType === "percentage") {
+    return data.discount <= 100;
+  }
+  return true;
 }, {
-  message: "Discount must be a non-negative value",
-  path: ["discount"], 
+  message: "Percentage discount cannot exceed 100%",
+  path: ["discount"], // Path to the field with the error
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -132,6 +136,7 @@ const defaultValues: FormValues = {
   }],
   note: "",
   discount: 0,
+  discountType: "percentage",
 };
 
 // Add this type for better type safety
@@ -223,6 +228,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           ],
       note: initialData?.note || "",
       discount: initialData?.discount || 0,
+      discountType: initialData?.discountType || "percentage",
     },
   });
 
@@ -257,7 +263,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     return stock?.weight;
   };
 
-  // Update the calculateItemTotal function to clearly show tax calculation
+  // Update the calculateItemTotal function
   const calculateItemTotal = (item: OrderItem): number => {
     if (!item) return 0;
     
@@ -308,246 +314,213 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         break;
     }
 
-    // Apply tax to the item subtotal
-    const totalWithTax = subtotal * taxMultiplier;
-    console.log('Final calculation with tax:', { 
+    const total = subtotal * taxMultiplier;
+    console.log('Final calculation:', { 
       subtotal, 
-      taxRate: tax,
       taxMultiplier, 
       calculation: `${subtotal} * ${taxMultiplier}`,
-      totalWithTax 
+      total 
     });
     
-    return totalWithTax;
+    return total;
   };
 
-  // Add a debug function to trace total calculations
-  const debugCalculation = (label: string, value: number) => {
-    console.log(`[DEBUG CALCULATION] ${label}: ${value} (${typeof value})`);
-    return value;
-  };
-
-  // Calculate the final order total that will be displayed and submitted
-  const calculateFinalTotal = (): number => {
-    // Get all items
-    const items = form.getValues("orderItems") || [];
-    
-    // Calculate tax-inclusive subtotal
-    const subtotalWithTax = items.reduce((sum, item) => {
-      const itemTotal = calculateItemTotal(item);
-      return sum + itemTotal;
-    }, 0);
-    
-    // Apply discount capped at subtotal
-    const discountValue = form.getValues("discount") || 0;
-    const appliedDiscount = Math.min(discountValue, subtotalWithTax);
-    
-    // Calculate final total
-    const totalWithDiscount = Math.max(0, subtotalWithTax - appliedDiscount);
-    
-    // Debug log all calculations
-    debugCalculation("Items subtotal with tax", subtotalWithTax);
-    debugCalculation("Discount value", discountValue);
-    debugCalculation("Applied discount", appliedDiscount);
-    debugCalculation("Final total", totalWithDiscount);
-    
-    // Return precise number
-    return Number(totalWithDiscount.toFixed(2));
-  };
-
-  // Update the calculateOrderTotal function to use the shared calculation
+  // Update calculateOrderTotal to use the inner calculateItemTotal
   const calculateOrderTotal = () => {
-    return calculateFinalTotal();
-  };
+    const items = form.getValues("orderItems") || [];
+    const discount = form.getValues("discount") || 0;
+    const discountType = form.getValues("discountType") || "percentage";
 
-  // Add useEffect to debug stock objects
-  useEffect(() => {
-    if (stocks && stocks.length > 0) {
-      console.log('Sample stock object:', stocks[0]);
-      console.log('isSold property exists on stock?', 'isSold' in stocks[0]);
-      console.log('Total stocks:', stocks.length);
-      console.log('Stocks with isSold=false:', stocks.filter(s => s.isSold === false).length);
-    }
-    
-    if (dividedStocks && dividedStocks.length > 0) {
-      console.log('Sample divided stock object:', dividedStocks[0]);
-      console.log('isSold property exists on divided?', 'isSold' in dividedStocks[0]);
-      console.log('Total divided stocks:', dividedStocks.length);
-      console.log('Divided stocks with isSold=false:', dividedStocks.filter(d => d.isSold === false).length);
-    }
-  }, [stocks, dividedStocks]);
-
-  // Update the getAvailableGSM function to correctly access properties
-  const getAvailableGSM = (type: string, product?: string): string[] => {
-    console.log('Getting GSM for:', { type, product });
-    if (!type) return [];
-    
-    const gsmSet = new Set<string>();
-    const result: string[] = [];
-    
-    if (type === 'Sublimation Paper') {
-      if (product === 'Roll') {
-        // For rolls, we need to check the stock gsm via the dividedStocks
-        dividedStocks.forEach(d => {
-          if (d.remainingLength > 0 && (d.isSold === false || d.isSold === undefined)) {
-            // Get GSM directly from the divided stock (already mapped in the API)
-            const gsmValue = d.gsm?.toString();
-            if (gsmValue && !gsmSet.has(gsmValue)) {
-              gsmSet.add(gsmValue);
-              result.push(gsmValue);
-            }
-          }
-        });
-      } else if (product === 'Jumbo Roll') {
-        // For Jumbo Roll, get GSM directly from stocks
-        stocks.forEach(s => {
-          if (s.type === type && 
-              s.remainingLength > 0 && 
-              (s.isSold === false || s.isSold === undefined)) {
-            const gsmValue = s.gsm?.toString();
-            if (gsmValue && !gsmSet.has(gsmValue)) {
-              gsmSet.add(gsmValue);
-              result.push(gsmValue);
-            }
-          }
-        });
-      }
-    } else if (type === 'Protect Paper') {
-      // For Protect Paper, get GSM from stocks
-      stocks.forEach(s => {
-        if (s.type === type && 
-            s.remainingLength > 0 && 
-            (s.isSold === false || s.isSold === undefined)) {
-          const gsmValue = s.gsm?.toString();
-          if (gsmValue && !gsmSet.has(gsmValue)) {
-            gsmSet.add(gsmValue);
-            result.push(gsmValue);
-          }
-        }
-      });
-    }
-    
-    console.log(`Found ${result.length} GSM values for ${type} ${product || ''}:`, result);
-    return result.sort((a, b) => Number(a) - Number(b));
-  };
-
-  // Update the getAvailableWidths function to correctly access properties
-  const getAvailableWidths = (type: string, product?: string, gsm?: string): string[] => {
-    console.log('Getting Widths for:', { type, product, gsm });
-    if (!type || !gsm) return [];
-    
-    const widthSet = new Set<string>();
-    const result: string[] = [];
-    
-    if (type === 'Sublimation Paper') {
-      if (product === 'Roll') {
-        // For rolls, width comes from divided stocks directly
-        dividedStocks.forEach(d => {
-          if (d.gsm?.toString() === gsm && 
-              d.remainingLength > 0 && 
-              (d.isSold === false || d.isSold === undefined)) {
-            const widthValue = d.width?.toString();
-            if (widthValue && !widthSet.has(widthValue)) {
-              widthSet.add(widthValue);
-              result.push(widthValue);
-            }
-          }
-        });
-      } else if (product === 'Jumbo Roll') {
-        // For Jumbo Roll, width comes directly from stocks
-        stocks.forEach(s => {
-          if (s.type === type && 
-              s.gsm?.toString() === gsm && 
-              s.remainingLength > 0 && 
-              (s.isSold === false || s.isSold === undefined)) {
-            const widthValue = s.width?.toString();
-            if (widthValue && !widthSet.has(widthValue)) {
-              widthSet.add(widthValue);
-              result.push(widthValue);
-            }
-          }
-        });
-      }
-    } else if (type === 'Protect Paper') {
-      // For Protect Paper, width comes from stocks
-      stocks.forEach(s => {
-        if (s.type === type && 
-            s.gsm?.toString() === gsm && 
-            s.remainingLength > 0 && 
-            (s.isSold === false || s.isSold === undefined)) {
-          const widthValue = s.width?.toString();
-          if (widthValue && !widthSet.has(widthValue)) {
-            widthSet.add(widthValue);
-            result.push(widthValue);
-          }
-        }
-      });
-    }
-    
-    console.log(`Found ${result.length} width values for ${type} ${product || ''} ${gsm}:`, result);
-    return result.sort((a, b) => Number(a) - Number(b));
-  };
-
-  // Update the getAvailableLengths function to correctly access properties
-  const getAvailableLengths = (type: string, product?: string, width?: string, gsm?: string): string[] => {
-    console.log('Getting Lengths for:', { type, product, width, gsm });
-    if (!type || !width || !gsm) return [];
-    
-    const lengthSet = new Set<string>();
-    const result: string[] = [];
-    
-    if (type === 'Sublimation Paper' && product === 'Roll') {
-      // For Roll, length comes from divided stocks
-      dividedStocks.forEach(d => {
-        if (d.gsm?.toString() === gsm && 
-            d.width?.toString() === width && 
-            d.remainingLength > 0 && 
-            (d.isSold === false || d.isSold === undefined)) {
-          const lengthValue = d.length?.toString();
-          if (lengthValue && !lengthSet.has(lengthValue)) {
-            lengthSet.add(lengthValue);
-            result.push(lengthValue);
-          }
-        }
-      });
-    }
-    
-    console.log(`Found ${result.length} length values for ${type} ${product || ''} ${gsm} ${width}:`, result);
-    return result.sort((a, b) => Number(a) - Number(b));
-  };
-
-  // Update the getAvailableWeights function to correctly access properties
-  const getAvailableWeights = (type: string, gsm?: string, width?: string): string[] => {
-    console.log('Getting Weights for:', { type, gsm, width });
-    if (!type || !gsm || !width) return [];
-    
-    const weightSet = new Set<string>();
-    const result: string[] = [];
-    
-    stocks.forEach(s => {
-      if (s.type === type && 
-          s.gsm?.toString() === gsm && 
-          s.width?.toString() === width && 
-          s.remainingLength > 0 && 
-          (s.isSold === false || s.isSold === undefined) && 
-          s.weight) {
-        const weightValue = s.weight?.toString();
-        if (weightValue && !weightSet.has(weightValue)) {
-          weightSet.add(weightValue);
-          result.push(weightValue);
-        }
-      }
+    let totalSum = 0;
+    const itemDetails = items.map(item => {
+      const itemTotal = calculateItemTotal(item);
+      totalSum += itemTotal;
+      
+      return {
+        type: item.type,
+        product: item.product,
+        price: Number(item.price),
+        quantity: Number(item.quantity),
+        tax: Number(item.tax),
+        taxMultiplier: 1 + (Number(item.tax) / 100),
+        itemTotal
+      };
     });
     
-    console.log(`Found ${result.length} weight values for ${type} ${gsm} ${width}:`, result);
-    return result.sort((a, b) => Number(a) - Number(b));
+    let discountedTotal = totalSum;
+    if (discountType === "percentage") {
+      // Ensure percentage discount is capped at 100%
+      const cappedDiscount = Math.min(discount, 100);
+      discountedTotal = totalSum - (totalSum * (cappedDiscount / 100));
+    } else {
+      // Value-based discount: directly subtract the amount
+      discountedTotal = totalSum - discount;
+    }
+    
+    // Ensure total is not negative
+    if (discountedTotal < 0) discountedTotal = 0;
+    
+    console.log('Item-by-item calculation details:', itemDetails);
+    console.log('Final calculated total:', discountedTotal);
+    
+    return Number(discountedTotal.toFixed(2));
+  };
+
+  const getAvailableGSM = (type: string, product?: string) => {
+    console.log('getAvailableGSM called with:', { type, product });
+    if (type !== "Sublimation Paper" || !product) return [];
+
+    if (product === "Jumbo Roll") {
+      // For Jumbo Roll, get GSM from stocks
+      const filteredStocks = stocks
+        .filter(s => s.type === "Sublimation Paper" && s.remainingLength > 0 && s.isSold === false);
+      console.log('Filtered Stocks for Jumbo Roll:', filteredStocks);
+      const gsmList = filteredStocks
+        .map(s => s.gsm)
+        .filter(gsm => gsm !== null && gsm !== undefined)
+        .map(gsm => gsm.toString());
+      console.log('GSM List for Jumbo Roll:', gsmList);
+      return Array.from(new Set(gsmList)).sort((a, b) => parseFloat(a) - parseFloat(b));
+    } 
+
+    if (product === "Roll") {
+      // For Roll, get available divided stocks first
+      const availableDivided = dividedStocks.filter(d => d.remainingLength > 0 && d.isSold === false);
+      console.log('Available divided stocks for Roll:', availableDivided);
+      
+      // Extract any GSM values available
+      const gsmValues: number[] = [];
+      
+      availableDivided.forEach(d => {
+        // Try to get gsm from anywhere it might exist
+        let gsmValue: number | undefined;
+        
+        // First check direct gsm property
+        if ('gsm' in d && d.gsm !== undefined && d.gsm !== null) {
+          gsmValue = d.gsm;
+        }
+        // Next check in stock object if it exists
+        else if ('stock' in d && d.stock && typeof d.stock === 'object' && 'gsm' in (d.stock as any)) {
+          gsmValue = (d.stock as any).gsm;
+        }
+        
+        if (gsmValue !== undefined) {
+          gsmValues.push(gsmValue);
+        }
+      });
+      
+      // Convert to strings
+      const gsmList = gsmValues.map(gsm => gsm.toString());
+      console.log('Extracted GSM values for Roll:', gsmList);
+      
+      return Array.from(new Set(gsmList)).sort((a, b) => parseFloat(a) - parseFloat(b));
+    }
+
+    return [];
+  };
+
+  const getAvailableWidths = (type: string, product?: string, gsm?: string) => {
+    console.log('Getting Widths for:', { type, product, gsm }); // Debug log
+
+    if (!gsm || type !== "Sublimation Paper" || !product) return [];
+
+    if (product === "Jumbo Roll") {
+      // For Jumbo Roll, get widths from stocks with matching GSM
+      const widthList = stocks
+        .filter(s => 
+          s.type === "Sublimation Paper" && 
+          s.gsm.toString() === gsm &&
+          s.remainingLength > 0 &&
+          s.isSold === false
+        )
+        .map(s => s.width.toString());
+      console.log('Available Jumbo Roll Widths:', widthList);
+      return Array.from(new Set(widthList)).sort((a, b) => parseFloat(a) - parseFloat(b));
+    }
+
+    if (product === "Roll") {
+      // For Roll, find divided items that match the GSM
+      const matchingDivided = dividedStocks.filter(d => {
+        let gsmValue: number | undefined;
+        
+        // Check for gsm property
+        if ('gsm' in d && d.gsm !== undefined) {
+          gsmValue = d.gsm;
+        }
+        // Check in stock object if available
+        else if ('stock' in d && d.stock && typeof d.stock === 'object' && 'gsm' in (d.stock as any)) {
+          gsmValue = (d.stock as any).gsm;
+        }
+        
+        return gsmValue?.toString() === gsm && d.remainingLength > 0 && d.isSold === false;
+      });
+      
+      console.log('Matching divided for widths:', matchingDivided);
+      
+      const widthList = matchingDivided.map(d => d.width.toString());
+      console.log('Available Roll Widths:', widthList);
+      
+      return Array.from(new Set(widthList)).sort((a, b) => parseFloat(a) - parseFloat(b));
+    }
+
+    return [];
+  };
+
+  const getAvailableLengths = (type: string, product?: string, width?: string, gsm?: string) => {
+    if (!product || !width || !gsm || type !== "Sublimation Paper" || product !== "Roll") return [];
+    
+    console.log('Getting Lengths for:', { type, product, width, gsm }); // Debug log
+    
+    // Filter divided stocks by GSM and width
+    const matchingDivided = dividedStocks.filter(d => {
+      let gsmValue: number | undefined;
+      
+      // Check for gsm property
+      if ('gsm' in d && d.gsm !== undefined) {
+        gsmValue = d.gsm;
+      }
+      // Check in stock object if available
+      else if ('stock' in d && d.stock && typeof d.stock === 'object' && 'gsm' in (d.stock as any)) {
+        gsmValue = (d.stock as any).gsm;
+      }
+      
+      return gsmValue?.toString() === gsm && 
+        d.width.toString() === width &&
+        d.remainingLength > 0 &&
+        d.isSold === false;
+    });
+
+    console.log('Matching divided for lengths:', matchingDivided);
+    
+    const lengthList = matchingDivided.map(d => d.length.toString());
+    console.log('Available Roll Lengths:', lengthList);
+    
+    return Array.from(new Set(lengthList)).sort((a, b) => parseFloat(a) - parseFloat(b));
+  };
+
+  const getAvailableWeights = (type: string, gsm?: string, width?: string) => {
+    if (!gsm || !width) return [];
+
+    // Get weights from stocks with matching criteria
+    const weightList = stocks
+      .filter(s => 
+        s.type === type && 
+        s.gsm.toString() === gsm && 
+        s.width.toString() === width &&
+        s.remainingLength > 0 &&
+        s.isSold === false
+      )
+      .map(s => s.weight.toString());
+
+    console.log('Available Weights:', weightList);
+    return Array.from(new Set(weightList)).sort((a, b) => parseFloat(a) - parseFloat(b));
   };
 
   const checkStockAvailability = (item: OrderItem) => {
     switch (item.type) {
       case "DTF Film":
         const dtfStock = stocks
-        .filter(s => s.type === "DTF Film" && (s.isSold === false || s.isSold === undefined))
+        .filter(s => s.type === "DTF Film" && s.isSold === false)
         .reduce((sum, s) => sum + s.remainingLength, 0);
         return {
           available: dtfStock,
@@ -556,7 +529,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
 
       case "Ink":
         const inkStock = stocks
-        .filter(s => s.type === "Ink" && (s.isSold === false || s.isSold === undefined))
+        .filter(s => s.type === "Ink" && s.isSold === false)
         .reduce((sum, s) => sum + s.remainingLength, 0);
         return {
           available: inkStock,
@@ -569,7 +542,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             s.gsm.toString() === item.gsm && 
             s.width.toString() === item.width &&
             s.length.toString() === item.length &&
-            (s.isSold === false || s.isSold === undefined)
+            s.isSold === false
           ).length;
           return {
             available: rollStock,
@@ -582,8 +555,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             s.type === "Sublimation Paper" &&
             s.gsm.toString() === item.gsm && 
             s.width.toString() === item.width &&
-            s.weight?.toString() === item.weight &&
-            (s.isSold === false || s.isSold === undefined)
+            s.weight.toString() === item.weight &&
+            s.isSold === false
           ).length;
           return {
             available: jumboStock,
@@ -598,7 +571,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           s.gsm.toString() === item.gsm &&
           s.width.toString() === item.width &&
           s.weight.toString() === item.weight &&
-          (s.isSold === false || s.isSold === undefined)
+          s.isSold === false
         ).length;
         return {
           available: protectStock,
@@ -625,7 +598,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     setOpen(false);
   };
 
-  // Update the handleSubmit function to correctly handle stock IDs
+  // Update the onSubmit function
   const handleSubmit = async (data: FormValues) => {
     try {
       setIsLoading(true);
@@ -640,11 +613,14 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       }
 
       // Validate discount
-      if (data.discount < 0) {
-        throw new Error(t('sales.orders.errors.invalidDiscount', 'Discount must be greater than or equal to 0'));
+      if (data.discountType === "percentage" && (data.discount < 0 || data.discount > 100)) {
+        throw new Error(t('sales.orders.errors.invalidDiscount', 'Percentage discount must be between 0 and 100'));
       }
 
-      // Process order items
+      if (data.discountType === "value" && data.discount < 0) {
+        throw new Error(t('sales.orders.errors.invalidDiscount', 'Value discount must be greater than or equal to 0'));
+      }
+
       const orderItems = data.orderItems.map(item => {
         console.log('Processing item for submission:', item);
         
@@ -665,65 +641,61 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           throw new Error(t('sales.orders.errors.invalidPrice', 'Invalid price'));
         }
 
-        // If stockId is already set, use it
-        let productId = item.stockId || '';
-        
-        // If stockId is not set, try to find the matching stock
-        if (!productId) {
-          if (item.type === 'Sublimation Paper') {
-            if (item.product === 'Roll') {
-              // For Roll, find matching divided stock
-              const matchingDividedStock = dividedStocks.find(d => 
-                d.gsm?.toString() === item.gsm && 
-                d.width?.toString() === item.width &&
-                d.length?.toString() === item.length &&
+        // Find matching stock/divided item and set stockId
+        let stockId = '';
+        if (item.type === 'Sublimation Paper') {
+          if (item.product === 'Roll') {
+            const dividedStock = dividedStocks.find(d => {
+              // Try to get gsm value safely
+              let gsmValue: number | undefined;
+              if ('gsm' in d && d.gsm !== undefined) {
+                gsmValue = d.gsm;
+              } else if ('stock' in d && d.stock && typeof d.stock === 'object' && 'gsm' in (d.stock as any)) {
+                gsmValue = (d.stock as any).gsm;
+              }
+              
+              return gsmValue?.toString() === item.gsm && 
+                d.width.toString() === item.width &&
+                d.length.toString() === item.length &&
                 d.remainingLength > 0 &&
-                (d.isSold === false || d.isSold === undefined)
-              );
-              
-              productId = matchingDividedStock?.id || '';
-              console.log('Found matching Roll stock for submission:', { dividedStock: matchingDividedStock, productId });
-            } else if (item.product === 'Jumbo Roll') {
-              // For Jumbo Roll, find matching stock
-              const stock = stocks.find(s =>
-                s.type === item.type &&
-                s.gsm?.toString() === item.gsm &&
-                s.width?.toString() === item.width &&
-                s.weight?.toString() === item.weight &&
-                s.remainingLength > 0 &&
-                (s.isSold === false || s.isSold === undefined)
-              );
-              
-              productId = stock?.id || '';
-              console.log('Found matching Jumbo Roll stock for submission:', { stock, productId });
-            }
-          } else if (item.type === 'Protect Paper') {
-            // For Protect Paper, find matching stock
+                d.isSold === false;
+            });
+            stockId = dividedStock?.id || '';
+            console.log('Found Roll stock:', { dividedStock, stockId });
+          } else if (item.product === 'Jumbo Roll') {
             const stock = stocks.find(s =>
               s.type === item.type &&
-              s.gsm?.toString() === item.gsm &&
-              s.width?.toString() === item.width &&
+              s.gsm.toString() === item.gsm &&
+              s.width.toString() === item.width &&
               s.weight?.toString() === item.weight &&
               s.remainingLength > 0 &&
-              (s.isSold === false || s.isSold === undefined)
+              s.isSold === false
             );
-            
-            productId = stock?.id || '';
-            console.log('Found matching Protect Paper stock for submission:', { stock, productId });
-          } else if (item.type === 'DTF Film' || item.type === 'Ink') {
-            // For DTF or Ink, find any available stock
-            const stock = stocks.find(s =>
-              s.type === item.type &&
-              s.remainingLength > 0 &&
-              (s.isSold === false || s.isSold === undefined)
-            );
-            
-            productId = stock?.id || '';
-            console.log('Found matching DTF/Ink stock for submission:', { stock, productId });
+            stockId = stock?.id || '';
+            console.log('Found Jumbo Roll stock:', { stock, stockId });
           }
+        } else if (item.type === 'Protect Paper') {
+          const stock = stocks.find(s =>
+            s.type === item.type &&
+            s.gsm.toString() === item.gsm &&
+            s.width.toString() === item.width &&
+            s.weight?.toString() === item.weight &&
+            s.remainingLength > 0 &&
+            s.isSold === false
+          );
+          stockId = stock?.id || '';
+          console.log('Found Protect Paper stock:', { stock, stockId });
+        } else if (item.type === 'DTF Film' || item.type === 'Ink') {
+          const stock = stocks.find(s =>
+            s.type === item.type &&
+            s.remainingLength > 0 &&
+            s.isSold === false
+          );
+          stockId = stock?.id || '';
+          console.log('Found DTF/Ink stock:', { stock, stockId });
         }
 
-        if (!productId) {
+        if (!stockId) {
           throw new Error(t('sales.orders.errors.productRequired', 'Please select a valid product from inventory'));
         }
 
@@ -737,52 +709,30 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           quantity: quantity,
           price: price,
           tax: tax,
-          productId: productId, // Use the found or existing productId
+          productId: stockId, // Map stockId to productId for API
         };
 
         return baseItem;
       });
 
       console.log('Prepared order items for submission:', orderItems);
-      
-      // Calculate the tax-inclusive subtotal without applying discount
-      const taxInclusiveSubtotal = orderItems.reduce((total, item) => {
-        const itemTotal = calculateItemTotal({
-          type: item.type as ProductType,
-          product: item.product as SublimationProductType,
-          gsm: item.gsm?.toString(),
-          width: item.width?.toString(),
-          length: item.length?.toString(),
-          weight: item.weight?.toString(),
-          quantity: item.quantity,
-          price: item.price,
-          tax: item.tax
-        });
-        return total + itemTotal;
-      }, 0);
-      
-      console.log('Calculated tax-inclusive subtotal:', taxInclusiveSubtotal);
-      
-      // Prepare final submission data with the tax-inclusive subtotal
+
+      // Calculate the total amount - ensure it's a proper number
+      const totalAmount = Number(calculateOrderTotal().toFixed(2));
+      console.log('Total amount for submission:', totalAmount);
+
+      // Prepare final submission data
       const submissionData = {
         customerId: data.customerId,
         orderItems,
         note: data.note || "",
-        totalAmount: taxInclusiveSubtotal,
+        totalAmount,
         discount: Number(data.discount),
-        discountType: "value", // Always use value-based discount
+        discountType: data.discountType,
       };
 
-      // Double check that totalAmount is a valid number
-      if (typeof submissionData.totalAmount !== 'number' || isNaN(submissionData.totalAmount)) {
-        console.error('Error: totalAmount is not a valid number', submissionData.totalAmount);
-        throw new Error(t('sales.orders.errors.invalidTotal', 'Total amount must be a valid number'));
-      }
+      console.log('Final submission data:', submissionData);
 
-      console.log('Final submission data:', JSON.stringify(submissionData, null, 2));
-      console.log('totalAmount in submission data:', submissionData.totalAmount, 'type:', typeof submissionData.totalAmount);
-
-      // Call the onSubmit function provided by the parent component
       await onSubmit(submissionData);
 
     } catch (error) {
@@ -816,7 +766,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     setOpen(false);
   };
 
-  // Update the handleFieldChange function to correctly set stockId for items
+  // Update the handleFieldChange function to consider isSold
   const handleFieldChange = (index: number, field: keyof OrderItem, value: string) => {
     console.log(`Changing ${field} to ${value} at index ${index}`);
     
@@ -847,14 +797,26 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     // Set the value directly
     form.setValue(path, value);
 
-    // Reset dependent fields based on the field being changed
+    // Set default values based on product type
+    if (field === 'type') {
+      // Clear weight field only for Roll type
+      if (value === 'Roll') {
+        form.setValue(`orderItems.${index}.weight`, null);
+      }
+      form.setValue(`orderItems.${index}.product`, undefined);
+      form.setValue(`orderItems.${index}.gsm`, '');
+      form.setValue(`orderItems.${index}.width`, '');
+      form.setValue(`orderItems.${index}.length`, '');
+      form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when type changes
+    }
+
+    // Reset dependent fields
     switch (field) {
       case 'type':
         form.setValue(`orderItems.${index}.product`, undefined);
         form.setValue(`orderItems.${index}.gsm`, '');
         form.setValue(`orderItems.${index}.width`, '');
         form.setValue(`orderItems.${index}.length`, '');
-        form.setValue(`orderItems.${index}.weight`, '');
         form.setValue(`orderItems.${index}.quantity`, 1);
         form.setValue(`orderItems.${index}.stockId`, ''); // Clear stockId when type changes
         break;
@@ -890,52 +852,46 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         let stockId = '';
         if (type === 'Sublimation Paper') {
           if (product === 'Roll') {
-            // For Roll, find matching divided stock
-            const matchingDividedStock = dividedStocks.find(d => 
-              d.gsm?.toString() === gsm && 
-              d.width?.toString() === width &&
-              d.length?.toString() === length &&
-              d.remainingLength > 0 &&
-              (d.isSold === false || d.isSold === undefined)
-            );
-            
-            stockId = matchingDividedStock?.id || '';
-            console.log('Found Roll stock:', { dividedStock: matchingDividedStock, stockId });
+            const dividedStock = dividedStocks.find(d => {
+              // Find the related stock using stockId
+              const stock = stocks.find(s => s.id === d.stockId);
+              return stock?.gsm.toString() === gsm && 
+                d.width.toString() === width &&
+                d.length.toString() === length &&
+                d.remainingLength > 0 &&
+                d.isSold === false;
+            });
+            stockId = dividedStock?.id || '';
+            console.log('Found Roll stock:', { dividedStock, stockId });
           } else if (product === 'Jumbo Roll') {
-            // For Jumbo Roll, find matching stock
             const stock = stocks.find(s =>
               s.type === type &&
-              s.gsm?.toString() === gsm &&
-              s.width?.toString() === width &&
-              s.weight?.toString() === weight &&
+              s.gsm.toString() === gsm &&
+              s.width.toString() === width &&
+              s.weight.toString() === weight &&
               s.remainingLength > 0 &&
-              (s.isSold === false || s.isSold === undefined)
+              s.isSold === false
             );
-            
             stockId = stock?.id || '';
             console.log('Found Jumbo Roll stock:', { stock, stockId });
           }
         } else if (type === 'Protect Paper') {
-          // For Protect Paper, find matching stock
           const stock = stocks.find(s =>
             s.type === type &&
-            s.gsm?.toString() === gsm &&
-            s.width?.toString() === width &&
-            s.weight?.toString() === weight &&
+            s.gsm.toString() === gsm &&
+            s.width.toString() === width &&
+            s.weight.toString() === weight &&
             s.remainingLength > 0 &&
-            (s.isSold === false || s.isSold === undefined)
+            s.isSold === false
           );
-          
           stockId = stock?.id || '';
           console.log('Found Protect Paper stock:', { stock, stockId });
         } else if (type === 'DTF Film' || type === 'Ink') {
-          // For DTF or Ink, find any available stock
           const stock = stocks.find(s =>
             s.type === type &&
             s.remainingLength > 0 &&
-            (s.isSold === false || s.isSold === undefined)
+            s.isSold === false
           );
-          
           stockId = stock?.id || '';
           console.log('Found DTF/Ink stock:', { stock, stockId });
         }
@@ -944,12 +900,10 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           console.warn('No matching stock found for:', { type, product, gsm, width, length, weight });
         }
 
-        // Set the stockId
         form.setValue(`orderItems.${index}.stockId`, stockId);
         break;
     }
 
-    // Trigger validation for the item
     form.trigger(`orderItems.${index}`);
   };
 
@@ -1014,6 +968,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         customerId: initialData.customerId,
         note: initialData.note || "",
         discount: initialData.discount || 0,
+        discountType: initialData.discountType || "percentage",
         orderItems: initialData.orderItems
           .filter(item => allowedTypes.includes(item.type as ProductType))
           .map(item => ({
@@ -1039,40 +994,6 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       setOrderItems(watchedItems);
     }
   }, [initialData, form]);
-
-  // Add debugging to check API data structure when component loads
-  useEffect(() => {
-    console.log('========== ORDER FORM DATA DEBUG ==========');
-    console.log('Customers:', customers?.length || 0);
-    console.log('Stocks:', stocks?.length || 0);
-    console.log('DividedStocks:', dividedStocks?.length || 0);
-    
-    if (stocks && stocks.length > 0) {
-      console.log('Stock sample:', stocks[0]);
-      console.log('Stock props:', Object.keys(stocks[0]));
-    }
-    
-    if (dividedStocks && dividedStocks.length > 0) {
-      console.log('DividedStock sample:', dividedStocks[0]);
-      console.log('DividedStock props:', Object.keys(dividedStocks[0]));
-      
-      // Check if gsm is available on dividedStocks
-      const hasGsm = dividedStocks.some(d => d.gsm !== undefined);
-      console.log('DividedStocks has gsm property:', hasGsm);
-      
-      // Count available values for debugging
-      const availableGsm = new Set(dividedStocks.map(d => d.gsm?.toString()).filter(Boolean)).size;
-      const availableWidths = new Set(dividedStocks.map(d => d.width?.toString()).filter(Boolean)).size;
-      const availableLengths = new Set(dividedStocks.map(d => d.length?.toString()).filter(Boolean)).size;
-      
-      console.log('Available values in dividedStocks:', {
-        gsm: availableGsm,
-        widths: availableWidths,
-        lengths: availableLengths
-      });
-    }
-    console.log('=========================================');
-  }, [customers, stocks, dividedStocks]);
 
   if (orderFormDataLoading) {
     return (
@@ -1500,26 +1421,48 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             ))}
         </div>
 
-          {/* Discount Value Section */}
+          {/* Discount Type and Value Section */}
           <div className="flex justify-end space-x-4 pt-4 border-t">
             <div className="flex items-center gap-4">
+              <FormField
+                control={form.control}
+                name="discountType"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2">
+                    <FormLabel>Discount Type:</FormLabel>
+                    <FormControl>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger className="w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="percentage">Percentage (%)</SelectItem>
+                          <SelectItem value="value">Fixed Amount (Rp)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="discount"
                 render={({ field }) => (
                   <FormItem className="flex items-center gap-2">
-                    <FormLabel>Discount (Rp):</FormLabel>
+                    <FormLabel>Discount{form.watch("discountType") === "percentage" ? " (%)" : " (Rp)"}:</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
                         min="0"
-                        step="1"
-                        className="w-32"
+                        step="0.01"
+                        className="w-24"
                         {...field}
+                        max={form.watch("discountType") === "percentage" ? 100 : undefined}
                         onChange={e => {
                           const value = parseFloat(e.target.value) || 0;
-                          if (value < 0) {
-                            field.onChange(0);
+                          // Prevent values over 100 for percentage discounts
+                          if (form.watch("discountType") === "percentage" && value > 100) {
+                            field.onChange(100);
                           } else {
                             field.onChange(value);
                           }
@@ -1538,16 +1481,22 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             {form.watch("discount") > 0 && (
               <div className="flex-col text-right mr-4">
                 <div className="text-sm text-muted-foreground">
-                  Subtotal (Tax Included): {formatCurrency(watchedItems.reduce((sum, item) => sum + calculateItemTotal(item), 0))}
+                  Subtotal: {formatCurrency(calculateOrderTotal() + (form.watch("discountType") === "percentage" 
+                    ? calculateOrderTotal() * form.watch("discount") / (100 - form.watch("discount"))
+                    : form.watch("discount")
+                  ))}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  Discount: {formatCurrency(Math.min(form.watch("discount"), watchedItems.reduce((sum, item) => sum + calculateItemTotal(item), 0)))}
+                  {form.watch("discountType") === "percentage" 
+                    ? `Discount: ${form.watch("discount")}%`
+                    : `Discount: ${formatCurrency(form.watch("discount"))}`
+                  }
                 </div>
               </div>
             )}
             <div className="text-sm font-medium">Total Amount:</div>
-            <div className="text-lg font-semibold" data-testid="order-total">
-              {formatCurrency(calculateFinalTotal())}
+            <div className="text-lg font-semibold">
+              {formatCurrency(calculateOrderTotal())}
             </div>
           </div>
 

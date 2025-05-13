@@ -5,7 +5,7 @@ import { fixARDiscrepancy } from "@/app/lib/finance/ar-reconciliation";
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -16,7 +16,10 @@ export async function POST(
       );
     }
 
-    const orderId = params.id;
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+        const orderId = id;
     if (!orderId) {
       return NextResponse.json(
         { error: "Order ID is required" },

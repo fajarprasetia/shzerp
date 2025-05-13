@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!params?.id) {
     return NextResponse.json(
@@ -14,7 +14,10 @@ export async function POST(
 
   try {
     const stock = await prisma.stock.update({
-      where: { id: params.id },
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+          where: { id: id },
       data: {
         inspected: true,
         inspectedAt: new Date(),

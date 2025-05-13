@@ -38,17 +38,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    // Check if order has already been shipped
+    // Check if there's already an IN_PROGRESS shipment for this order
     const existingShipment = await prisma.shipment.findFirst({
-      where: { orderId },
+      where: { 
+        orderId,
+        status: 'IN_PROGRESS'
+      },
+      include: {
+        shipmentItems: true
+      }
     });
-
-    if (existingShipment) {
-      return NextResponse.json(
-        { error: "This order has already been shipped" },
-        { status: 400 }
-      );
-    }
 
     // Check if we have scanned items to process
     // First try the new format with explicit scannedItems array
@@ -94,26 +93,48 @@ export async function POST(request: Request) {
 
     console.log("Processing shipment with items:", JSON.stringify(itemsToProcess));
 
-    // Create the shipment record
-    const shipment = await prisma.shipment.create({
-      data: {
-        orderId,
-        shippedBy: session.user.id,
-        shipmentDate: new Date(),
-        notes: shipmentNotes || "",
-        shipmentItems: {
-          create: itemsToProcess.map(item => ({
-            orderItemId: item.orderItemId,
-            scannedBarcode: item.barcode,
-            stockId: item.stockId,
-            dividedId: item.dividedId
-          })),
+    // Create the shipment record (or update the existing one)
+    let shipment;
+    if (existingShipment) {
+      // Update the existing shipment
+      shipment = await prisma.shipment.update({
+        where: { id: existingShipment.id },
+        data: {
+          shippedBy: session.user.id,
+          shipmentDate: new Date(),
+          notes: shipmentNotes || "",
+          status: 'COMPLETED' // Change to COMPLETED status
         },
-      },
-      include: {
-        shipmentItems: true,
-      },
-    });
+        include: {
+          shipmentItems: true
+        }
+      });
+      
+      // We'll use the existing shipment items and add any new ones
+      console.log(`Using existing IN_PROGRESS shipment ${existingShipment.id} with ${existingShipment.shipmentItems.length} items`);
+    } else {
+      // Create a new shipment record
+      shipment = await prisma.shipment.create({
+        data: {
+          orderId,
+          shippedBy: session.user.id,
+          shipmentDate: new Date(),
+          notes: shipmentNotes || "",
+          status: 'COMPLETED', // Set to COMPLETED status
+          shipmentItems: {
+            create: itemsToProcess.map(item => ({
+              orderItemId: item.orderItemId,
+              scannedBarcode: item.barcode,
+              stockId: item.stockId,
+              dividedId: item.dividedId
+            })),
+          },
+        },
+        include: {
+          shipmentItems: true,
+        },
+      });
+    }
 
     // Update order status to "shipped"
     await prisma.order.update({

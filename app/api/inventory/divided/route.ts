@@ -1,35 +1,80 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+// Export configuration to prevent caching
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+/**
+ * API endpoint to find Divided items that match a specific order number
+ * Used as a fallback when the match-order endpoint fails
+ */
+export async function GET(req: Request) {
   try {
+    const url = new URL(req.url);
+    const orderNo = url.searchParams.get('orderNo');
+    
+    if (orderNo) {
+      console.log(`Finding sold divided items matching order number: ${orderNo}`);
+      
+      // Find divided items associated with this order that are marked as sold
+      const dividedItems = await prisma.divided.findMany({
+        where: {
+          orderNo: orderNo,
+          isSold: true // Only include items that are marked as sold
+        },
+        select: {
+          id: true,
+          barcodeId: true,
+          rollNo: true,
+          stockId: true,
+          width: true,
+          length: true,
+          isSold: true,
+          customerName: true,
+          soldDate: true,
+          stock: {
+            select: {
+              gsm: true,
+              width: true,
+              type: true
+            }
+          }
+        }
+      });
+      
+      console.log(`Found ${dividedItems.length} sold divided items with orderNo: ${orderNo}`);
+      return NextResponse.json(dividedItems);
+    }
+    
+    // If no orderNo, return all divided items (used for the order form)
     const divided = await prisma.divided.findMany({
       include: {
-        stock: true,
+        stock: {
+          select: {
+            jumboRollNo: true,
+            type: true,
+            gsm: true
+          }
+        },
         inspectedBy: {
           select: {
-            name: true,
-          },
-        },
+            name: true
+          }
+        }
       },
-      orderBy: [
-        { isSold: "asc" },
-        { createdAt: "desc" },
-      ],
+      orderBy: {
+        createdAt: "desc"
+      }
     });
-
-    // Map parent stock properties to divided stock
-    const mappedDivided = divided.map(item => ({
-      ...item,
-      containerNo: item.stock.containerNo,
-      arrivalDate: item.stock.arrivalDate,
-      inspector: item.inspectedBy
-    }));
-
-    return NextResponse.json(mappedDivided);
+    
+    return NextResponse.json(divided);
   } catch (error) {
-    console.error("Error fetching divided stock:", error);
-    return NextResponse.json({ error: "Error fetching divided stock" }, { status: 500 });
+    console.error("Error finding divided items:", error);
+    return NextResponse.json(
+      { error: "Failed to retrieve divided items" },
+      { status: 500 }
+    );
   }
 }
 
@@ -106,7 +151,10 @@ export async function POST(request: Request) {
     return NextResponse.json(divided);
   } catch (error) {
     console.error("Error creating divided stock:", error);
-    return NextResponse.json({ error: "Error creating divided stock" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Error creating divided stock" },
+      { status: 500 }
+    );
   }
 }
 

@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -16,7 +16,10 @@ export async function POST(
       );
     }
 
-    const accountId = params.id;
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+        const accountId = id;
     if (!accountId) {
       return NextResponse.json(
         { error: "Account ID is required" },
