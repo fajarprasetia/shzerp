@@ -373,7 +373,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     if (product === "Jumbo Roll") {
       // For Jumbo Roll, get GSM from stocks
       const filteredStocks = stocks
-        .filter(s => s.type === "Sublimation Paper" && s.remainingLength > 0);
+        .filter(s => s.type === "Sublimation Paper" && s.remainingLength > 0 && s.isSold === false);
       console.log('Filtered Stocks for Jumbo Roll:', filteredStocks);
       const gsmList = filteredStocks
         .map(s => s.gsm)
@@ -385,7 +385,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
 
     if (product === "Roll") {
       // For Roll, get available divided stocks first
-      const availableDivided = dividedStocks.filter(d => d.remainingLength > 0);
+      const availableDivided = dividedStocks.filter(d => d.remainingLength > 0 && d.isSold === false);
       console.log('Available divided stocks for Roll:', availableDivided);
       
       // Extract any GSM values available
@@ -430,7 +430,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         .filter(s => 
           s.type === "Sublimation Paper" && 
           s.gsm.toString() === gsm &&
-          s.remainingLength > 0
+          s.remainingLength > 0 &&
+          s.isSold === false
         )
         .map(s => s.width.toString());
       console.log('Available Jumbo Roll Widths:', widthList);
@@ -451,7 +452,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           gsmValue = (d.stock as any).gsm;
         }
         
-        return gsmValue?.toString() === gsm && d.remainingLength > 0;
+        return gsmValue?.toString() === gsm && d.remainingLength > 0 && d.isSold === false;
       });
       
       console.log('Matching divided for widths:', matchingDivided);
@@ -485,7 +486,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       
       return gsmValue?.toString() === gsm && 
         d.width.toString() === width &&
-             d.remainingLength > 0;
+        d.remainingLength > 0 &&
+        d.isSold === false;
     });
 
     console.log('Matching divided for lengths:', matchingDivided);
@@ -505,7 +507,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         s.type === type && 
         s.gsm.toString() === gsm && 
         s.width.toString() === width &&
-        s.remainingLength > 0
+        s.remainingLength > 0 &&
+        s.isSold === false
       )
       .map(s => s.weight.toString());
 
@@ -517,7 +520,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     switch (item.type) {
       case "DTF Film":
         const dtfStock = stocks
-        .filter(s => s.type === "DTF Film")
+        .filter(s => s.type === "DTF Film" && s.isSold === false)
         .reduce((sum, s) => sum + s.remainingLength, 0);
         return {
           available: dtfStock,
@@ -526,7 +529,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
 
       case "Ink":
         const inkStock = stocks
-        .filter(s => s.type === "Ink")
+        .filter(s => s.type === "Ink" && s.isSold === false)
         .reduce((sum, s) => sum + s.remainingLength, 0);
         return {
           available: inkStock,
@@ -538,7 +541,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           const rollStock = dividedStocks.filter(s => 
             s.gsm.toString() === item.gsm && 
             s.width.toString() === item.width &&
-            s.length.toString() === item.length
+            s.length.toString() === item.length &&
+            s.isSold === false
           ).length;
           return {
             available: rollStock,
@@ -549,10 +553,11 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         if (item.product === "Jumbo Roll") {
           const jumboStock = stocks.filter(s =>
             s.type === "Sublimation Paper" &&
-        s.gsm.toString() === item.gsm && 
+            s.gsm.toString() === item.gsm && 
             s.width.toString() === item.width &&
-            s.weight.toString() === item.weight
-      ).length;
+            s.weight.toString() === item.weight &&
+            s.isSold === false
+          ).length;
           return {
             available: jumboStock,
             unit: "rolls"
@@ -565,7 +570,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           s.type === "Protect Paper" &&
           s.gsm.toString() === item.gsm &&
           s.width.toString() === item.width &&
-          s.weight.toString() === item.weight
+          s.weight.toString() === item.weight &&
+          s.isSold === false
         ).length;
         return {
           available: protectStock,
@@ -651,7 +657,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
               return gsmValue?.toString() === item.gsm && 
                 d.width.toString() === item.width &&
                 d.length.toString() === item.length &&
-                d.remainingLength > 0;
+                d.remainingLength > 0 &&
+                d.isSold === false;
             });
             stockId = dividedStock?.id || '';
             console.log('Found Roll stock:', { dividedStock, stockId });
@@ -661,7 +668,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
               s.gsm.toString() === item.gsm &&
               s.width.toString() === item.width &&
               s.weight?.toString() === item.weight &&
-              s.remainingLength > 0
+              s.remainingLength > 0 &&
+              s.isSold === false
             );
             stockId = stock?.id || '';
             console.log('Found Jumbo Roll stock:', { stock, stockId });
@@ -672,14 +680,16 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             s.gsm.toString() === item.gsm &&
             s.width.toString() === item.width &&
             s.weight?.toString() === item.weight &&
-            s.remainingLength > 0
+            s.remainingLength > 0 &&
+            s.isSold === false
           );
           stockId = stock?.id || '';
           console.log('Found Protect Paper stock:', { stock, stockId });
         } else if (item.type === 'DTF Film' || item.type === 'Ink') {
           const stock = stocks.find(s =>
             s.type === item.type &&
-            s.remainingLength > 0
+            s.remainingLength > 0 &&
+            s.isSold === false
           );
           stockId = stock?.id || '';
           console.log('Found DTF/Ink stock:', { stock, stockId });
@@ -756,7 +766,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     setOpen(false);
   };
 
-  // Update the handleFieldChange function
+  // Update the handleFieldChange function to consider isSold
   const handleFieldChange = (index: number, field: keyof OrderItem, value: string) => {
     console.log(`Changing ${field} to ${value} at index ${index}`);
     
@@ -848,7 +858,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
               return stock?.gsm.toString() === gsm && 
                 d.width.toString() === width &&
                 d.length.toString() === length &&
-                d.remainingLength > 0;
+                d.remainingLength > 0 &&
+                d.isSold === false;
             });
             stockId = dividedStock?.id || '';
             console.log('Found Roll stock:', { dividedStock, stockId });
@@ -858,7 +869,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
               s.gsm.toString() === gsm &&
               s.width.toString() === width &&
               s.weight.toString() === weight &&
-              s.remainingLength > 0
+              s.remainingLength > 0 &&
+              s.isSold === false
             );
             stockId = stock?.id || '';
             console.log('Found Jumbo Roll stock:', { stock, stockId });
@@ -869,14 +881,16 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             s.gsm.toString() === gsm &&
             s.width.toString() === width &&
             s.weight.toString() === weight &&
-            s.remainingLength > 0
+            s.remainingLength > 0 &&
+            s.isSold === false
           );
           stockId = stock?.id || '';
           console.log('Found Protect Paper stock:', { stock, stockId });
         } else if (type === 'DTF Film' || type === 'Ink') {
           const stock = stocks.find(s =>
             s.type === type &&
-            s.remainingLength > 0
+            s.remainingLength > 0 &&
+            s.isSold === false
           );
           stockId = stock?.id || '';
           console.log('Found DTF/Ink stock:', { stock, stockId });
