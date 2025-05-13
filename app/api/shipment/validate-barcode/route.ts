@@ -14,10 +14,11 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // Fetch order with orderItems
+    // Fetch order with orderItems and customer information
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
+        customer: true,
         orderItems: {
           include: {
             stock: true,
@@ -98,6 +99,38 @@ export async function POST(req: Request) {
         error: "No matching order item found for this inventory item",
         matched: false
       }, { status: 400 });
+    }
+
+    // Mark the item as sold immediately when it's matched successfully
+    // This is the key change to fix the issue
+    try {
+      // Update stock or divided item
+      if (stockItem) {
+        await prisma.stock.update({
+          where: { id: stockItem.id },
+          data: {
+            isSold: true,
+            orderNo: order.orderNo,
+            soldDate: new Date(),
+            customerName: order.customer.name
+          }
+        });
+        console.log(`[VALIDATE_BARCODE] Marked stock ${stockItem.id} as sold for order ${order.orderNo}`);
+      } else if (dividedItem) {
+        await prisma.divided.update({
+          where: { id: dividedItem.id },
+          data: {
+            isSold: true,
+            orderNo: order.orderNo,
+            soldDate: new Date(),
+            customerName: order.customer.name
+          }
+        });
+        console.log(`[VALIDATE_BARCODE] Marked divided stock ${dividedItem.id} as sold for order ${order.orderNo}`);
+      }
+    } catch (updateError) {
+      console.error('[VALIDATE_BARCODE] Error marking item as sold:', updateError);
+      // Don't fail the response, just log the error
     }
 
     // Success response

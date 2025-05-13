@@ -123,68 +123,111 @@ export async function POST(request: Request) {
       },
     });
 
-    // Use Sets to avoid duplicate updates for stock and divided items
+    // Use Sets to track which items have been processed
     const updatedStockIds = new Set<string>();
     const updatedDividedIds = new Set<string>();
+    const processedItems: { id: string, type: string, status: string }[] = [];
 
+    // Process each item - ensuring it's marked as sold
     for (const item of itemsToProcess) {
+      // Handle stock items
       if (item.stockId && !updatedStockIds.has(item.stockId)) {
-      // Find the original order item to get quantity
-      const orderItem = orderItems.find(oi => oi.id === item.orderItemId);
-      const quantity = orderItem ? Number(orderItem.quantity) || 0 : 0;
-        // Check if stock exists and is not already sold
+        // Find the original order item to get quantity
+        const orderItem = orderItems.find(oi => oi.id === item.orderItemId);
+        const quantity = orderItem ? Number(orderItem.quantity) || 0 : 0;
+        
+        // Check current status of stock
         const stock = await prisma.stock.findUnique({
           where: { id: item.stockId }
         });
-        if (stock && !stock.isSold) {
-          await prisma.stock.update({
-            where: { id: item.stockId },
-            data: {
-              isSold: true,
-              orderNo: order.orderNo,
-              soldDate: new Date(),
-              customerName: order.customer.name,
+        
+        if (stock) {
+          try {
+            // Update data object based on current status
+            const updateData: any = {
               remainingLength: {
                 decrement: quantity
               }
-            },
-          });
-          updatedStockIds.add(item.stockId);
-          console.log(`Completed shipment: Marked stock ${item.stockId} as sold for order ${order.orderNo}`);
+            };
+            
+            // Only update sold-related fields if not already sold
+            if (!stock.isSold) {
+              updateData.isSold = true;
+              updateData.orderNo = order.orderNo;
+              updateData.soldDate = new Date();
+              updateData.customerName = order.customer.name;
+            }
+            
+            await prisma.stock.update({
+              where: { id: item.stockId },
+              data: updateData,
+            });
+            
+            updatedStockIds.add(item.stockId);
+            processedItems.push({ 
+              id: item.stockId, 
+              type: 'stock', 
+              status: stock.isSold ? 'already sold, updated quantity' : 'marked as sold' 
+            });
+          } catch (error) {
+            console.error(`Error updating stock ${item.stockId}:`, error);
+          }
         } else {
-          console.warn(`Stock item ${item.stockId} not found or already sold, skipping`);
+          console.warn(`Stock item ${item.stockId} not found, skipping`);
         }
       }
+      
+      // Handle divided items
       if (item.dividedId && !updatedDividedIds.has(item.dividedId)) {
         // Find the original order item to get quantity
         const orderItem = orderItems.find(oi => oi.id === item.orderItemId);
         const quantity = orderItem ? Number(orderItem.quantity) || 0 : 0;
-        // Check if divided item exists and is not already sold
+        
+        // Check current status of divided item
         const divided = await prisma.divided.findUnique({
           where: { id: item.dividedId }
         });
-        if (divided && !divided.isSold) {
-          await prisma.divided.update({
-            where: { id: item.dividedId },
-            data: {
-              isSold: true,
-              orderNo: order.orderNo,
-              soldDate: new Date(),
-              customerName: order.customer.name,
+        
+        if (divided) {
+          try {
+            // Update data object based on current status
+            const updateData: any = {
               remainingLength: {
                 decrement: quantity
               }
-            },
-          });
-          updatedDividedIds.add(item.dividedId);
-          console.log(`Completed shipment: Marked divided stock ${item.dividedId} as sold for order ${order.orderNo}`);
+            };
+            
+            // Only update sold-related fields if not already sold
+            if (!divided.isSold) {
+              updateData.isSold = true;
+              updateData.orderNo = order.orderNo;
+              updateData.soldDate = new Date();
+              updateData.customerName = order.customer.name;
+            }
+            
+            await prisma.divided.update({
+              where: { id: item.dividedId },
+              data: updateData,
+            });
+            
+            updatedDividedIds.add(item.dividedId);
+            processedItems.push({ 
+              id: item.dividedId, 
+              type: 'divided', 
+              status: divided.isSold ? 'already sold, updated quantity' : 'marked as sold' 
+            });
+          } catch (error) {
+            console.error(`Error updating divided item ${item.dividedId}:`, error);
+          }
         } else {
-          console.warn(`Divided item ${item.dividedId} not found or already sold, skipping`);
+          console.warn(`Divided item ${item.dividedId} not found, skipping`);
         }
       }
     }
-    console.log(`Updated dividedIds:`, Array.from(updatedDividedIds));
-    console.log(`Updated stockIds:`, Array.from(updatedStockIds));
+    
+    console.log(`Processed Items:`, processedItems);
+    console.log(`Updated dividedIds (${updatedDividedIds.size}):`, Array.from(updatedDividedIds));
+    console.log(`Updated stockIds (${updatedStockIds.size}):`, Array.from(updatedStockIds));
 
     return NextResponse.json({
       success: true,
@@ -194,6 +237,7 @@ export async function POST(request: Request) {
         orderId: order.id,
         orderNo: order.orderNo
       },
+      processedItems
     });
 
   } catch (error) {
