@@ -1,5 +1,5 @@
 'use client';
-import { use } from 'react';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -66,8 +66,7 @@ interface OrderDetail {
   note?: string;
 }
 
-export default function ShipmentProcessPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ShipmentProcessPage({ params }: { params: { id: string } }) {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
@@ -83,7 +82,7 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
 
   useEffect(() => {
     fetchOrderDetails();
-  }, [id]);
+  }, [params.id]);
 
   useEffect(() => {
     if (order) {
@@ -110,14 +109,42 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
       
       const data = await response.json();
       
-      // Initialize scan tracking
+      // Fetch previously scanned items for this order
+      const scanStatusResponse = await fetch(`/api/shipment/orders/${params.id}/scan-status`);
+      
+      if (!scanStatusResponse.ok) {
+        console.warn('Could not fetch scan status - starting with fresh scan counts');
+        
+        // Initialize scan tracking with zeroes if we can't fetch status
+        const orderWithScanStatus = {
+          ...data,
+          orderItems: data.orderItems.map((item: any) => ({
+            ...item,
+            scannedCount: 0,
+            scannedBarcodes: []
+          }))
+        };
+        
+        setOrder(orderWithScanStatus);
+        return;
+      }
+      
+      const scanStatusData = await scanStatusResponse.json();
+      
+      // Merge the scan status with the order data
       const orderWithScanStatus = {
         ...data,
-        orderItems: data.orderItems.map((item: any) => ({
-          ...item,
-          scannedCount: 0,
-          scannedBarcodes: []
-        }))
+        orderItems: data.orderItems.map((item: any) => {
+          const itemScanStatus = scanStatusData.items.find((statusItem: any) => statusItem.orderItemId === item.id);
+          
+          return {
+            ...item,
+            scannedCount: itemScanStatus ? itemScanStatus.scannedCount : 0,
+            scannedBarcodes: itemScanStatus ? itemScanStatus.scannedBarcodes : [],
+            stockId: itemScanStatus ? itemScanStatus.stockId : null,
+            dividedId: itemScanStatus ? itemScanStatus.dividedId : null
+          };
+        })
       };
       
       setOrder(orderWithScanStatus);
@@ -203,6 +230,19 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
     const result = await response.json();
     
     if (result.matched) {
+      // Check if this is an already scanned item being re-acknowledged
+      if (result.alreadyScanned) {
+        setIsScanSuccess(true);
+        setLastScannedItem(result.item.type + (result.item.product ? ` (${result.item.product})` : ''));
+
+        toast({
+          variant: "default",
+          title: "Item Already Scanned",
+          description: `This item was already scanned for this order. Record verified.`,
+        });
+        return;
+      }
+
       // Update the UI to mark the item as scanned
       setIsScanSuccess(true);
       setLastScannedItem(result.item.type + (result.item.product ? ` (${result.item.product})` : ''));
@@ -218,7 +258,7 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
         if (currentScannedCount >= currentItem.quantity) {
           setLastScanError(`Already scanned all ${currentItem.quantity} items of this type`);
           toast({
-            variant: "warning",
+            variant: "default",
             title: "Maximum Quantity Reached",
             description: `Already scanned all ${currentItem.quantity} items of this type`,
           });
@@ -230,7 +270,7 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
         if (scannedBarcodes.includes(barcodeValue)) {
           setLastScanError('This item has already been scanned');
           toast({
-            variant: "warning",
+            variant: "default",
             title: "Duplicate Scan",
             description: "This specific item has already been scanned",
           });
@@ -255,6 +295,27 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
           ...order,
           orderItems: updatedItems
         });
+        
+        // Also save this scan to the backend to persist across page refreshes
+        try {
+          await fetch('/api/shipment/record-scan', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              orderId: order.id,
+              orderItemId: currentItem.id,
+              barcodeValue,
+              stockId: result.stock?.id || null,
+              dividedId: result.divided?.id || null,
+            }),
+          });
+        } catch (error) {
+          console.error("Failed to record scan in backend:", error);
+          // We don't show an error to the user here, as the scan was successful
+          // in the UI, and this is just a backup
+        }
         
         // Show success toast with appropriate message
         if (itemCompleted) {
@@ -378,7 +439,7 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
   };
 
   // Get formatted item details for display
-  const getItemDisplayText = (item: OrderWithCustomer['orderItems'][0]) => {
+  const getItemDisplayText = (item: OrderDetail['orderItems'][0]) => {
     let details = `${item.type}`;
     
     if (item.product) {

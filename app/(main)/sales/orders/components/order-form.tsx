@@ -292,7 +292,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           console.log('Roll calculation:', { 
             price,
             width: `${width}m (from ${item.width}mm)`,
-            length: `${length}mm`,
+            length: `${length}m`,
             quantity,
             calculation: `${price} * ${width} * ${length} * ${quantity}`,
             subtotal
@@ -1258,7 +1258,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
                               form.getValues(`orderItems.${index}.product`) === "Jumbo Roll" && 
                               "text-muted-foreground"
                             )}>
-                              Length (mm) {form.getValues(`orderItems.${index}.product`) === "Roll" && "*"}
+                              Length (m) {form.getValues(`orderItems.${index}.product`) === "Roll" && "*"}
                             </FormLabel>
                           <Select 
                               onValueChange={(value) => handleFieldChange(index, 'length', value)}

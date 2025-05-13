@@ -1,113 +1,147 @@
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
   try {
-    const { orderId, barcodeValue } = await req.json();
+    const body = await req.json();
+    const { orderId, barcodeValue } = body;
 
-    // Validate request
     if (!orderId || !barcodeValue) {
-      return NextResponse.json({
-        error: "Order ID and barcode value are required",
-        matched: false
-      }, { status: 400 });
+      return NextResponse.json(
+        { matched: false, error: "Missing required parameters" },
+        { status: 400 }
+      );
     }
 
-    // Fetch order with orderItems and customer information
+    // Find the order with customer info
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
         customer: true,
-        orderItems: {
-          include: {
-            stock: true,
-            divided: true
-          }
-        }
-      }
+        orderItems: true,
+      },
     });
 
     if (!order) {
-      return NextResponse.json({
-        error: "Order not found",
-        matched: false
-      }, { status: 404 });
+      return NextResponse.json(
+        { matched: false, error: "Order not found" },
+        { status: 404 }
+      );
     }
 
-    // Find inventory item matching the barcode
-    const stockItem = await prisma.stock.findFirst({
+    // Check for stock or divided rolls with this barcode
+    const stock = await prisma.stock.findUnique({
+      where: { barcodeId: barcodeValue },
+    });
+
+    const divided = await prisma.divided.findUnique({
+      where: { barcodeId: barcodeValue },
+    });
+
+    if (!stock && !divided) {
+      return NextResponse.json({
+        matched: false,
+        error: "Barcode does not match any item in inventory",
+      });
+    }
+
+    // Check if the item is already sold
+    const isSold = stock?.isSold || divided?.isSold || false;
+    
+    // If it's sold, check if it's sold to THIS order
+    const soldToThisOrder = 
+      (stock?.orderNo === order.orderNo) || 
+      (divided?.orderNo === order.orderNo);
+    
+    // If it's sold to a different order, reject the scan
+    if (isSold && !soldToThisOrder) {
+      return NextResponse.json({
+        matched: false,
+        error: "This item has already been sold to a different order",
+      });
+    }
+
+    // Find a matching order item
+    // First, try to match by stockId or dividedId if available
+    const matchingItem = order.orderItems.find(
+      (item) =>
+        (stock && item.stockId === stock.id) ||
+        (divided && item.dividedId === divided.id)
+    );
+
+    // If not matched by ID, try to match by type and specifications
+    const typeMatchedItem = !matchingItem
+      ? order.orderItems.find((item) => {
+          if (stock) {
+            return (
+              item.type === stock.type &&
+              (!item.gsm || item.gsm === stock.gsm.toString()) &&
+              (!item.width || item.width === stock.width.toString()) &&
+              (!item.length || item.length === stock.length.toString())
+            );
+          }
+          if (divided) {
+            // For divided items, we need to get the stock type from the parent stock
+            const dividedParent = {
+              type: "Divided", // Default type
+              gsm: 0,
+              width: divided.width,
+              length: divided.length
+            };
+            
+            return (
+              item.type === "Divided" &&
+              (!item.gsm || item.gsm === dividedParent.gsm.toString()) &&
+              (!item.width || item.width === divided.width.toString()) &&
+              (!item.length || item.length === divided.length.toString())
+            );
+          }
+          return false;
+        })
+      : null;
+
+    // Check for existing shipment item records with this barcode
+    // This helps us track if this specific item was already scanned
+    const existingShipmentItem = await prisma.shipmentItem.findFirst({
       where: {
-        barcodeId: barcodeValue,
-        isSold: false
+        scannedBarcode: barcodeValue,
+        orderItem: {
+          orderId: orderId
+        }
+      },
+      include: {
+        orderItem: true
       }
     });
 
-    const dividedItem = await prisma.divided.findFirst({
-      where: {
-        barcodeId: barcodeValue,
-        isSold: false
-      }
-    });
-
-    // No matching inventory item found
-    if (!stockItem && !dividedItem) {
+    if (existingShipmentItem) {
+      // If we find a shipment item record, this barcode was already scanned for this order
       return NextResponse.json({
-        error: "No inventory item found with this barcode or item has already been sold",
-        matched: false
-      }, { status: 400 });
+        matched: true,
+        item: existingShipmentItem.orderItem,
+        alreadyScanned: true,
+        stock: stock,
+        divided: divided,
+        message: "This item was already scanned for this order"
+      });
     }
 
-    // Extract item details
-    const inventoryItem = stockItem || dividedItem;
-    const itemType = stockItem ? "stock" : "divided";
-    
-    // Get the specs to match with order items
-    const itemSpecs = stockItem ? {
-      type: stockItem.type,
-      gsm: stockItem.gsm,
-      width: stockItem.width,
-      weight: stockItem.weight
-    } : {
-      type: (await prisma.stock.findUnique({ where: { id: dividedItem!.stockId } }))?.type || "",
-      gsm: (await prisma.stock.findUnique({ where: { id: dividedItem!.stockId } }))?.gsm || 0,
-      width: dividedItem!.width,
-      weight: dividedItem!.weight || 0
-    };
+    const item = matchingItem || typeMatchedItem;
 
-    // Find matching order item
-    let matchedOrderItem = null;
-    
-    for (const orderItem of order.orderItems) {
-      // Skip items that are fully scanned
-      // This check will be handled in the frontend to allow rescanning (for replacing items)
-      
-      // Match specs
-      const specMatch = 
-        (orderItem.type === itemSpecs.type || !orderItem.type) &&
-        (Math.abs(Number(orderItem.gsm) - itemSpecs.gsm) < 0.01 || !orderItem.gsm) &&
-        (Math.abs(Number(orderItem.width) - itemSpecs.width) < 0.01 || !orderItem.width);
-      
-      if (specMatch) {
-        matchedOrderItem = orderItem;
-        break;
-      }
-    }
-
-    if (!matchedOrderItem) {
+    if (!item) {
       return NextResponse.json({
-        error: "No matching order item found for this inventory item",
-        matched: false
-      }, { status: 400 });
+        matched: false,
+        error: "No matching item found in this order",
+      });
     }
 
     // Mark the item as sold immediately when it's matched successfully
-    // This is the key change to fix the issue
+    // This ensures that if the page is refreshed, we can detect already-scanned items
     try {
       // Update stock or divided item
-      if (stockItem) {
+      if (stock && !stock.isSold) {
         await prisma.stock.update({
-          where: { id: stockItem.id },
+          where: { id: stock.id },
           data: {
             isSold: true,
             orderNo: order.orderNo,
@@ -115,10 +149,10 @@ export async function POST(req: Request) {
             customerName: order.customer.name
           }
         });
-        console.log(`[VALIDATE_BARCODE] Marked stock ${stockItem.id} as sold for order ${order.orderNo}`);
-      } else if (dividedItem) {
+        console.log(`[VALIDATE_BARCODE] Marked stock ${stock.id} as sold for order ${order.orderNo}`);
+      } else if (divided && !divided.isSold) {
         await prisma.divided.update({
-          where: { id: dividedItem.id },
+          where: { id: divided.id },
           data: {
             isSold: true,
             orderNo: order.orderNo,
@@ -126,43 +160,26 @@ export async function POST(req: Request) {
             customerName: order.customer.name
           }
         });
-        console.log(`[VALIDATE_BARCODE] Marked divided stock ${dividedItem.id} as sold for order ${order.orderNo}`);
+        console.log(`[VALIDATE_BARCODE] Marked divided stock ${divided.id} as sold for order ${order.orderNo}`);
       }
     } catch (updateError) {
       console.error('[VALIDATE_BARCODE] Error marking item as sold:', updateError);
       // Don't fail the response, just log the error
     }
 
-    // Success response
+    // At this point we have a valid match
     return NextResponse.json({
-      message: "Barcode matched successfully",
       matched: true,
-      item: {
-        id: matchedOrderItem.id,
-        type: matchedOrderItem.type,
-        product: matchedOrderItem.product,
-        quantity: matchedOrderItem.quantity
-      },
-      orderItem: {
-        id: matchedOrderItem.id,
-        quantity: matchedOrderItem.quantity
-      },
-      stock: stockItem,
-      divided: dividedItem,
-      inventoryItem: {
-        id: inventoryItem!.id,
-        type: itemType,
-        barcode: barcodeValue,
-        specs: itemSpecs
-      }
+      item,
+      stock,
+      divided,
+      message: "Barcode matched successfully"
     });
-
   } catch (error) {
     console.error("Error validating barcode:", error);
-    return NextResponse.json({
-      error: "Internal server error",
-      matched: false,
-      details: error instanceof Error ? error.message : "Unknown error"
-    }, { status: 500 });
+    return NextResponse.json(
+      { matched: false, error: "Failed to validate barcode" },
+      { status: 500 }
+    );
   }
-} 
+}

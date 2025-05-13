@@ -29,8 +29,6 @@ import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "react-i18next";
 // Import pre-initialized i18n instance
 import i18nInstance from "@/app/i18n";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Input } from "@/components/ui/input";
 
 export default withPermission(StockPage, "inventory", "read");
 
@@ -46,7 +44,75 @@ function StockPage() {
   const { t, i18n } = useTranslation(undefined, { i18n: i18nInstance });
   const [mounted, setMounted] = useState(false);
 
-  // Move handlePrintLabel here so it is defined before useMemo and all usages
+  // Memoize the columns to avoid re-creation on each render
+  const columns = useMemo(() => getColumns(t), [t]);
+
+  // Effect to handle mounting and debug i18n state
+  useEffect(() => {
+    setMounted(true);
+    
+    // Log i18n state for debugging
+    console.log('Stock page i18n state:', {
+      language: i18n?.language,
+      isInitialized: i18n?.isInitialized,
+      availableLanguages: i18n?.languages || ['en', 'zh']
+    });
+  }, [i18n]);
+
+  // Filter stock data based on active tab
+  const filteredData = data?.filter((stock) => {
+    if (activeTab === "available") {
+      return !stock.isSold && stock.remainingLength > 0;
+    } else if (activeTab === "sold") {
+      return stock.isSold;
+    } else if (activeTab === "stockout") {
+      return !stock.isSold && stock.remainingLength === 0;
+    }
+    return true;
+  });
+
+  const handleSubmit = async (stockData: Stock) => {
+    await mutate();
+    setShowForm(false);
+  };
+
+  const handleCancel = () => {
+    setShowForm(false);
+  };
+
+  const handleDelete = async (ids: string[]) => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch("/api/inventory/stock", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ids }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete stock");
+      }
+
+      mutate();
+      setSelectedRows([]);
+      toast({
+        title: t('common.success', 'Success'),
+        description: t('inventory.stock.deleteSuccess', 'Selected stock items have been deleted.'),
+      });
+    } catch (error) {
+      console.error("Error deleting stock:", error);
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('inventory.stock.deleteError', 'Failed to delete stock items. Please try again.'),
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handlePrintLabel = async (ids: string[]) => {
     const stocks = data?.filter((stock: StockWithInspector) => ids.includes(stock.id));
     if (!stocks?.length) return;
@@ -84,139 +150,205 @@ function StockPage() {
 
         resolve(canvas.toDataURL('image/png'));
       });
-      
-      // Adjust barcode text placement to appear above barcode
-      doc.setFontSize(8);
-      doc.text(stock.barcodeId, 25, 3, { align: 'center' }); // Positioned above barcode
 
-      // Add barcode image below the text
-      doc.addImage(barcodeImage, 'PNG', 2, 4, 46, 10);
+      // Add barcode image - make it take up more space now that QR is removed
+      doc.addImage(barcodeImage, 'PNG', 2, 2, 46, 13);
 
       // Add text information below barcode
-      doc.setFontSize(8);
-      const textStartY = 18; // Improved spacing for better alignment
-      doc.text(`${t('inventory.stock.type', 'Type')}: ${stock.type}`, 2, textStartY);
-      doc.text(`${t('inventory.stock.gsm', 'GSM')}: ${stock.gsm}`, 2, textStartY + 3);
-      doc.text(`${t('inventory.stock.size', 'Size')}: ${stock.width}x${stock.length}mm`, 2, textStartY + 6);
-          }
+      doc.setFontSize(8); // Slightly larger text
+      doc.text(`${t('inventory.stock.type', 'Type')}: ${stock.type}`, 2, 18);
+      doc.text(`${t('inventory.stock.gsm', 'GSM')}: ${stock.gsm}`, 2, 21);
+      doc.text(`${t('inventory.stock.size', 'Size')}: ${stock.width}x${stock.length}mm`, 2, 24);
+    }
 
     doc.save("stock-labels.pdf");
   };
 
-  // Move handleDelete here so it is defined before useMemo and all usages
-  const handleDelete = async (ids: string[]) => {
-    setIsDeleting(true);
-    try {
-      const response = await fetch("/api/inventory/stock", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ids }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to delete stock");
-      }
-
-      mutate();
-      setSelectedRows([]);
-      toast({
-        title: t('common.success', 'Success'),
-        description: t('inventory.stock.deleteSuccess', 'Selected stock items have been deleted.'),
-      });
-    } catch (error) {
-      console.error("Error deleting stock:", error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('inventory.stock.deleteError', 'Failed to delete stock items. Please try again.'),
-        variant: "destructive",
-      });
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  // Memoize the columns to avoid re-creation on each render
-  const columns = useMemo(() =>
-    getColumns(t, (stock) => (
-      <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => handlePrintLabel([stock.id])}
-        >
-          <Printer className="h-4 w-4" />
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
-              <MoreVertical className="h-4 w-4" />
+  // Add a column for "Status" that shows "Sold" or "Available"
+  const stockColumns: ColumnDef<StockWithInspector>[] = [
+    {
+      id: "select",
+      header: ({ table }) => (
+        <input
+          type="checkbox"
+          checked={table.getIsAllPageRowsSelected()}
+          onChange={(e) => {
+            table.toggleAllPageRowsSelected(e.target.checked);
+            const ids = e.target.checked
+              ? table.getRowModel().rows.map((row) => row.original.id)
+              : [];
+            setSelectedRows(ids);
+          }}
+        />
+      ),
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          checked={row.getIsSelected()}
+          onChange={(e) => {
+            row.toggleSelected(e.target.checked);
+            setSelectedRows((prev) =>
+              e.target.checked
+                ? [...prev, row.original.id]
+                : prev.filter((id) => id !== row.original.id)
+            );
+          }}
+        />
+      ),
+    },
+    {
+      accessorKey: "jumboRollNo",
+      header: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.'),
+      sortingFn: "alphanumeric",
+      enableSorting: true,
+    },
+    {
+      accessorKey: "barcodeId",
+      header: t('inventory.stock.barcodeId', 'Barcode ID'),
+      sortingFn: "alphanumeric",
+      enableSorting: true,
+    },
+    {
+      accessorKey: "type",
+      header: t('inventory.stock.type', 'Type'),
+      sortingFn: "alphanumeric",
+      enableSorting: true,
+    },
+    {
+      accessorKey: "gsm",
+      header: t('inventory.stock.gsm', 'GSM'),
+      sortingFn: "basic",
+      enableSorting: true,
+    },
+    {
+      accessorKey: "width",
+      header: t('inventory.stock.width', 'Width'),
+      sortingFn: "basic",
+      enableSorting: true,
+    },
+    {
+      accessorKey: "length",
+      header: t('inventory.stock.length', 'Length'),
+      sortingFn: "basic",
+      enableSorting: true,
+    },
+    {
+      accessorKey: "remainingLength",
+      header: t('inventory.stock.remainingLength', 'Remaining Length'),
+      sortingFn: "basic",
+      enableSorting: true,
+      cell: ({ row }) => {
+        const remainingLength = row.original.remainingLength || 0;
+        
+        if (remainingLength === 0) {
+          return (
+            <div className="text-red-500 font-medium">
+              {remainingLength}m
+            </div>
+          );
+        }
+        
+        if (remainingLength < 50) {
+          return (
+            <div className="flex items-center">
+              <span>{remainingLength}m</span>
+              <Badge variant="destructive" className="ml-2 text-xs">{t('inventory.stock.low', 'Low')}</Badge>
+            </div>
+          );
+        }
+        
+        return <div>{remainingLength}m</div>;
+      },
+    },
+    {
+      accessorKey: "weight",
+      header: t('inventory.stock.weight', 'Weight'),
+      sortingFn: "basic",
+      enableSorting: true,
+    },
+    {
+      accessorKey: "containerNo",
+      header: t('inventory.stock.containerNo', 'Container No.'),
+      sortingFn: "alphanumeric",
+      enableSorting: true,
+    },
+    {
+      accessorKey: "arrivalDate",
+      header: t('inventory.stock.arrivalDate', 'Arrival Date'),
+      sortingFn: "datetime",
+      enableSorting: true,
+      cell: ({ row }) => format(new Date(row.original.arrivalDate), "PPP"),
+    },
+    {
+      accessorKey: "inspector",
+      header: t('inventory.stock.inspectedBy', 'Inspected by'),
+      sortingFn: "alphanumeric",
+      enableSorting: true,
+      cell: ({ row }) => row.original.inspector?.name || "-",
+    },
+    // Add order information for sold stock
+    {
+      accessorKey: "orderDetails",
+      header: t('inventory.stock.orderInfo', 'Order Info'),
+      enableSorting: false,
+      cell: ({ row }) => {
+        const stock = row.original;
+        return stock.isSold && stock.orderNo ? (
+          <div className="text-xs">
+            <div>{t('inventory.stock.order', 'Order')}: {stock.orderNo}</div>
+            <div>{t('inventory.stock.date', 'Date')}: {stock.soldDate ? format(new Date(stock.soldDate), "PPP") : "-"}</div>
+            <div>{t('inventory.stock.customer', 'Customer')}: {stock.customerName || "-"}</div>
+          </div>
+        ) : "-";
+      },
+    },
+    {
+      id: "actions",
+      enableSorting: false,
+      cell: ({ row }) => {
+        return (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handlePrintLabel([row.original.id])}
+            >
+              <Printer className="h-4 w-4" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => {
-                setShowForm(true);
-                setSelectedStock(stock);
-              }}
-            >
-              {t('common.edit', 'Edit')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => handlePrintLabel([stock.id])}
-            >
-              {t('inventory.stock.printLabel', 'Print Label')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="text-red-600"
-              onClick={() => handleDelete([stock.id])}
-            >
-              {t('common.delete', 'Delete')}
-            </DropdownMenuItem>
-            {/* Only show for available stock */}
-            {!stock.isSold && (
-              <DropdownMenuItem asChild>
-                <UpdateRemainingPopover stockId={stock.id} currentValue={stock.remainingLength} onUpdated={mutate} />
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    ))
-  , [t, handlePrintLabel, handleDelete, mutate]);
-
-  // Effect to handle mounting and debug i18n state
-  useEffect(() => {
-    setMounted(true);
-    
-    // Log i18n state for debugging
-    console.log('Stock page i18n state:', {
-      language: i18n?.language,
-      isInitialized: i18n?.isInitialized,
-      availableLanguages: i18n?.languages || ['en', 'zh']
-    });
-  }, [i18n]);
-
-  // Filter stock data based on active tab
-  const filteredData = data?.filter((stock) => {
-    if (activeTab === "available") {
-      return !stock.isSold;
-    } else if (activeTab === "sold") {
-      return stock.isSold;
-    }
-    return true;
-  });
-
-  const handleSubmit = async (stockData: Stock) => {
-    await mutate();
-    setShowForm(false);
-  };
-
-  const handleCancel = () => {
-    setShowForm(false);
-  };
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-8 w-8 p-0">
+                  <span className="sr-only">Open menu</span>
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => {
+                    setShowForm(true);
+                    setSelectedStock(row.original);
+                  }}
+                >
+                  {t('common.edit', 'Edit')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handlePrintLabel([row.original.id])}
+                >
+                  {t('inventory.stock.printLabel', 'Print Label')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-red-600"
+                  onClick={() => handleDelete([row.original.id])}
+                >
+                  {t('common.delete', 'Delete')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
+    },
+  ];
 
   // Return a loading placeholder while mounting to avoid hydration issues
   if (!mounted || isLoading) {
@@ -262,12 +394,21 @@ function StockPage() {
         />
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
+          <TabsList className="grid w-full grid-cols-3 mb-6">
             <TabsTrigger value="available">{t('inventory.stock.availableStock', 'Available Stock')}</TabsTrigger>
+            <TabsTrigger value="stockout">{t('inventory.stock.stockOut', 'Stock Out')}</TabsTrigger>
             <TabsTrigger value="sold">{t('inventory.stock.soldStock', 'Sold Stock')}</TabsTrigger>
           </TabsList>
           
           <TabsContent value="available" className="w-full">
+            <DataTable 
+              columns={columns}
+              data={filteredData || []} 
+              enableSorting={true}
+            />
+          </TabsContent>
+          
+          <TabsContent value="stockout" className="w-full">
             <DataTable 
               columns={columns}
               data={filteredData || []} 
@@ -285,56 +426,5 @@ function StockPage() {
         </Tabs>
       )}
     </div>
-  );
-}
-
-// Add UpdateRemainingPopover component
-function UpdateRemainingPopover({ stockId, currentValue, onUpdated }: { stockId: string; currentValue: number; onUpdated: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState(currentValue);
-  const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
-
-  async function handleUpdate() {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/inventory/stock/${stockId}/remaining-length`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ remainingLength: value }),
-      });
-      if (!res.ok) throw new Error("Failed to update remaining length");
-      toast({ title: "Success", description: "Remaining length updated." });
-      setOpen(false);
-      onUpdated();
-    } catch (e) {
-      toast({ title: "Error", description: "Failed to update remaining length", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon"><span className="sr-only">Update Remaining</span>✏️</Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-64">
-        <div className="flex flex-col gap-2">
-          <label htmlFor="remainingLength">New Remaining Length (m):</label>
-          <Input
-            id="remainingLength"
-            type="number"
-            min={0}
-            value={value}
-            onChange={e => setValue(Number(e.target.value))}
-            disabled={loading}
-          />
-          <Button onClick={handleUpdate} disabled={loading || value < 0} className="mt-2 w-full">
-            {loading ? "Updating..." : "Update"}
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 } 
