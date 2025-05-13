@@ -1,43 +1,40 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!params?.id) {
-    return NextResponse.json(
-      { error: "Stock ID is required" },
-      { status: 400 }
-    );
-  }
-
   try {
-    const stock = await prisma.stock.update({
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     // Unwrap params before accessing properties
     const unwrappedParams = await params;
     const id = unwrappedParams.id;
-          where: { id: id },
+
+    const stock = await prisma.stock.update({
+      where: { id: id },
       data: {
         inspected: true,
         inspectedAt: new Date(),
-        // TODO: Add inspectedById when auth is implemented
+        inspectedById: session.user.id
       },
       include: {
         inspectedBy: {
           select: {
-            name: true,
-          },
-        },
-      },
+            name: true
+          }
+        }
+      }
     });
 
     return NextResponse.json(stock);
   } catch (error) {
-    console.error("Error inspecting stock:", error);
-    return NextResponse.json(
-      { error: "Error inspecting stock" },
-      { status: 500 }
-    );
+    console.error("[STOCK_INSPECT_POST]", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 } 

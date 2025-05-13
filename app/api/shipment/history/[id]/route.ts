@@ -28,10 +28,20 @@ export async function GET(
         order: {
           include: {
             customer: true,
-            orderItems: true,
+            orderItems: {
+              include: {
+                stock: true,
+                divided: true
+              }
+            },
           },
         },
-        shipmentItems: true,
+        shipmentItems: {
+          include: {
+            stock: true,
+            divided: true
+          }
+        },
         shippedByUser: {
           select: {
             id: true,
@@ -72,15 +82,56 @@ export async function GET(
       address: shipment.order.customer.address || '',
       items: shipment.order.orderItems
         .filter(item => orderItemIds.includes(item.id))
-        .map(item => ({
-          id: item.id,
-          productName: item.type,
-          sku: item.id.substring(0, 8),
-          barcode: scannedBarcodesMap[item.id]?.[0] || item.id,
-          barcodes: scannedBarcodesMap[item.id] || [],
-          quantity: Number(item.quantity) || 1,
-          price: item.price ? Number(item.price) : 0
-        })),
+        .map(item => {
+          const itemData = {
+            id: item.id,
+            productName: item.type,
+            sku: item.id.substring(0, 8),
+            barcode: scannedBarcodesMap[item.id]?.[0] || item.id,
+            barcodes: scannedBarcodesMap[item.id] || [],
+            quantity: Number(item.quantity) || 1,
+            price: item.price ? Number(item.price) : 0,
+            gsm: item.gsm ? Number(item.gsm) : undefined,
+            width: item.width ? Number(item.width) : undefined,
+            length: item.length ? Number(item.length) : undefined,
+            weight: item.weight ? Number(item.weight) : undefined
+          };
+          
+          // Include jumbo roll details if available
+          if (item.stockId && item.stock) {
+            itemData.productName = `${item.type} - ${item.stock.jumboRollNo}`;
+            if (item.stock.barcodeId && !itemData.barcodes.includes(item.stock.barcodeId)) {
+              itemData.barcodes.push(item.stock.barcodeId);
+            }
+            if (!itemData.barcode || itemData.barcode === item.id) {
+              itemData.barcode = item.stock.barcodeId;
+            }
+            itemData.sku = item.stock.jumboRollNo;
+            itemData.gsm = Number(item.stock.gsm);
+            itemData.width = Number(item.stock.width);
+            itemData.length = Number(item.stock.length);
+            itemData.weight = Number(item.stock.weight);
+          }
+          
+          // Include divided roll details if available
+          if (item.dividedId && item.divided) {
+            itemData.productName = `${item.type} - ${item.divided.rollNo}`;
+            if (item.divided.barcodeId && !itemData.barcodes.includes(item.divided.barcodeId)) {
+              itemData.barcodes.push(item.divided.barcodeId);
+            }
+            if (!itemData.barcode || itemData.barcode === item.id) {
+              itemData.barcode = item.divided.barcodeId;
+            }
+            itemData.sku = item.divided.rollNo;
+            itemData.width = Number(item.divided.width);
+            itemData.length = Number(item.divided.length);
+            if (item.divided.weight) {
+              itemData.weight = Number(item.divided.weight);
+            }
+          }
+          
+          return itemData;
+        }),
       createdAt: shipment.shipmentDate.toISOString(),
       processedBy: {
         id: shipment.shippedByUser.id,

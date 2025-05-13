@@ -26,6 +26,11 @@ interface ShipmentItem {
   quantity: number;
   price: number;
   barcodes?: string[];
+  gsm?: number;
+  width?: number;
+  length?: number;
+  weight?: number;
+  type?: string;
 }
 
 interface Shipment {
@@ -293,38 +298,82 @@ export default function ShipmentDetailPage({ params }: { params: Promise<{ id: s
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('sales.shipment.document.product', 'Product')}</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>{t('inventory.stock.barcodeId', 'Barcode')}</TableHead>
-                  <TableHead className="text-right">{t('sales.shipment.document.quantity', 'Quantity')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {shipment.items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.productName}</TableCell>
-                    <TableCell>{item.sku}</TableCell>
-                    <TableCell>
-                      {item.barcodes && item.barcodes.length > 0 ? (
-                        <div className="space-y-1">
-                          {item.barcodes.map((barcode, index) => (
-                            <div key={index} className={index > 0 ? "text-xs text-muted-foreground" : ""}>
-                              {barcode}
-                            </div>
-                          ))}
+            <div className="grid gap-4 md:grid-cols-2">
+              {shipment.items.map((item, index) => (
+                <Card key={item.id || index} className="overflow-hidden">
+                  <CardHeader className="bg-muted/50">
+                    <CardTitle className="text-base">{item.productName || item.type}</CardTitle>
+                    {item.sku && (
+                      <CardDescription>
+                        {t('shipment.history.detail.sku', 'SKU')}: {item.sku}
+                      </CardDescription>
+                    )}
+                  </CardHeader>
+                  <CardContent className="p-4">
+                    <div className="space-y-2">
+                      {item.gsm && (
+                        <div className="grid grid-cols-2 gap-1 text-sm">
+                          <div className="font-medium text-muted-foreground">
+                            {t('shipment.history.detail.gsm', 'GSM')}:
+                          </div>
+                          <div>{item.gsm}g</div>
                         </div>
-                      ) : (
-                        item.barcode
                       )}
-                    </TableCell>
-                    <TableCell className="text-right">{item.quantity}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      {item.width && (
+                        <div className="grid grid-cols-2 gap-1 text-sm">
+                          <div className="font-medium text-muted-foreground">
+                            {t('shipment.history.detail.width', 'Width')}:
+                          </div>
+                          <div>{item.width}mm</div>
+                        </div>
+                      )}
+                      {item.length && (
+                        <div className="grid grid-cols-2 gap-1 text-sm">
+                          <div className="font-medium text-muted-foreground">
+                            {t('shipment.history.detail.length', 'Length')}:
+                          </div>
+                          <div>{item.length}m</div>
+                        </div>
+                      )}
+                      {item.weight && (
+                        <div className="grid grid-cols-2 gap-1 text-sm">
+                          <div className="font-medium text-muted-foreground">
+                            {t('shipment.history.detail.weight', 'Weight')}:
+                          </div>
+                          <div>{item.weight}kg</div>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-1 text-sm">
+                        <div className="font-medium text-muted-foreground">
+                          {t('shipment.history.detail.quantity', 'Quantity')}:
+                        </div>
+                        <div>{item.quantity}</div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 text-sm">
+                        <div className="font-medium text-muted-foreground">
+                          {t('shipment.history.detail.barcode', 'Barcode')}:
+                        </div>
+                        <div className="truncate">{item.barcode || '-'}</div>
+                      </div>
+                      {item.barcodes && item.barcodes.length > 1 && (
+                        <div className="mt-2">
+                          <div className="font-medium text-sm text-muted-foreground mb-1">
+                            {t('shipment.history.detail.allBarcodes', 'All Scanned Barcodes')}:
+                          </div>
+                          <div className="text-xs space-y-1 max-h-24 overflow-y-auto">
+                            {item.barcodes.map((barcode, i) => (
+                              <div key={i} className="p-1 bg-muted rounded truncate">
+                                {barcode}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
             
             <div className="mt-6 text-right space-y-2">
               <div className="flex justify-end">

@@ -18,7 +18,6 @@ export async function PUT(
     // Unwrap params before accessing properties
     const unwrappedParams = await params;
     const id = unwrappedParams.id;
-        const id = await Promise.resolve(id);
     const data = await request.json();
 
     // Check if task exists first
@@ -157,7 +156,9 @@ export async function DELETE(
       );
     }
 
-    const id = await Promise.resolve(id);
+    // Unwrap params before accessing properties
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
 
     // Check if task exists
     const existingTask = await prisma.task.findUnique({

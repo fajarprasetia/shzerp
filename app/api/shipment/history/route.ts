@@ -19,12 +19,13 @@ export async function GET(req: NextRequest) {
     const page = parseInt(url.searchParams.get('page') || '1');
     const pageSize = parseInt(url.searchParams.get('pageSize') || '10');
     const search = url.searchParams.get('search') || '';
+    const orderId = url.searchParams.get('orderId') || undefined;
     
     // Calculate pagination
     const skip = (page - 1) * pageSize;
     
     // Build search filters
-    const searchFilter = search
+    let searchFilter: any = search
       ? {
           OR: [
             { order: { orderNo: { contains: search, mode: 'insensitive' } } },
@@ -32,6 +33,14 @@ export async function GET(req: NextRequest) {
           ],
         }
       : {};
+      
+    // Add order ID filter if specified
+    if (orderId) {
+      searchFilter = {
+        ...searchFilter,
+        orderId: orderId
+      };
+    }
     
     // Fetch only COMPLETED shipments with related data
     const shipments = await prisma.shipment.findMany({
@@ -42,6 +51,7 @@ export async function GET(req: NextRequest) {
       include: {
         order: {
           select: {
+            id: true,
             orderNo: true,
             customer: {
               select: {
@@ -49,9 +59,21 @@ export async function GET(req: NextRequest) {
                 address: true,
               },
             },
+            orderItems: {
+              include: {
+                stock: true,
+                divided: true
+              }
+            }
           },
         },
-        shipmentItems: true,
+        shipmentItems: {
+          include: {
+            orderItem: true,
+            stock: true,
+            divided: true
+          }
+        },
         shippedByUser: {
           select: {
             id: true,
@@ -67,17 +89,68 @@ export async function GET(req: NextRequest) {
     });
     
     // Format shipments for response
-    const formattedShipments = shipments.map(shipment => ({
-      id: shipment.id,
-      orderId: shipment.orderId,
-      orderNo: shipment.order.orderNo,
-      customerName: shipment.order.customer.name,
-      address: shipment.order.customer.address || '',
-      items: shipment.shipmentItems,
-      createdAt: shipment.createdAt,
-      processedBy: shipment.shippedByUser || { id: '', name: '' },
-      status: shipment.status
-    }));
+    const formattedShipments = shipments.map(shipment => {
+      // Group and enhance items information
+      const items = [];
+      
+      // Create a mapping of order item IDs to track what items are being shipped
+      const orderItemMap = new Map();
+      
+      // First, process the order items to have the base data
+      if (shipment.order.orderItems) {
+        shipment.order.orderItems.forEach(item => {
+          orderItemMap.set(item.id, item);
+        });
+      }
+      
+      // Process shipment items to get what was actually shipped
+      const shippedOrderItemIds = new Set();
+      
+      shipment.shipmentItems.forEach(item => {
+        if (item.orderItemId) {
+          shippedOrderItemIds.add(item.orderItemId);
+        }
+      });
+      
+      // Only include order items that are associated with this shipment
+      shippedOrderItemIds.forEach(orderItemId => {
+        const orderItem = orderItemMap.get(orderItemId);
+        if (orderItem) {
+          let itemName = orderItem.type || 'Unknown';
+          
+          // Check if this item has an associated stock (jumbo roll)
+          if (orderItem.stockId && orderItem.stock) {
+            itemName = `${orderItem.type} - ${orderItem.stock.jumboRollNo}`;
+          }
+          
+          // Check if this item has an associated divided roll
+          if (orderItem.dividedId && orderItem.divided) {
+            itemName = `${orderItem.type} - ${orderItem.divided.rollNo}`;
+          }
+          
+          items.push({
+            id: orderItem.id,
+            name: itemName,
+            quantity: orderItem.quantity || 1,
+            type: orderItem.type
+          });
+        }
+      });
+      
+      return {
+        id: shipment.id,
+        orderId: shipment.orderId,
+        orderNo: shipment.order.orderNo,
+        customerName: shipment.order.customer.name,
+        address: shipment.order.customer.address || '',
+        items: items,
+        itemsCount: items.length,
+        createdAt: shipment.createdAt.toISOString(),
+        shipmentDate: shipment.shipmentDate ? shipment.shipmentDate.toISOString() : shipment.createdAt.toISOString(),
+        processedBy: shipment.shippedByUser || { id: '', name: '' },
+        status: shipment.status
+      };
+    });
     
     // Get total count for pagination with the same filter
     const totalShipments = await prisma.shipment.count({

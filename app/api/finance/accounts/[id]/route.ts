@@ -3,32 +3,33 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 
 export async function GET(
-  req: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
-    if (!session) {
-      return new NextResponse("Unauthorized", { status: 401 });
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const account = await prisma.account.findUnique({
-      where: {
     // Unwrap params before accessing properties
     const unwrappedParams = await params;
     const id = unwrappedParams.id;
-            id: id
+
+    const account = await prisma.account.findUnique({
+      where: {
+        id: id
       }
     });
 
     if (!account) {
-      return new NextResponse("Account not found", { status: 404 });
+      return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
     return NextResponse.json(account);
   } catch (error) {
     console.error("[ACCOUNT_GET]", error);
-    return new NextResponse("Internal error", { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

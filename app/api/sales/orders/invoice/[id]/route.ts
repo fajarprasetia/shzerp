@@ -8,11 +8,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const order = await prisma.order.findUnique({
     // Unwrap params before accessing properties
     const unwrappedParams = await params;
     const id = unwrappedParams.id;
-          where: { id: id },
+    
+    const order = await prisma.order.findUnique({
+      where: { id: id },
       include: {
         customer: true,
         divided: {

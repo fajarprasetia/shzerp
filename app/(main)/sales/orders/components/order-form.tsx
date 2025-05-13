@@ -980,7 +980,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             {item.product === "Jumbo Roll" && item.weight && ` - ${item.weight}kg`}
             {item.product === "Roll" && (
               <>
-                {item.length && ` - ${item.length}mm`}
+                {item.length && ` - ${item.length}m`}
                 {item.quantity && ` × ${item.quantity}`}
               </>
             )}

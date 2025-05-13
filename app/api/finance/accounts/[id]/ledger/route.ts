@@ -2,57 +2,63 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
-  req: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Authenticate the user
     const session = await auth();
-    if (!session) {
-      return new NextResponse("Unauthorized", { status: 401 });
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    // Get all journal entry items for the account
-    const items = await prisma.journalEntryItem.findMany({
-      where: {
+    
     // Unwrap params before accessing properties
     const unwrappedParams = await params;
     const id = unwrappedParams.id;
-            accountId: id,
+
+    const items = await prisma.journalEntryItem.findMany({
+      where: {
+        accountId: id,
         journalEntry: {
           status: "POSTED"
         }
       },
       include: {
-        journalEntry: true
+        journalEntry: true,
       },
-      orderBy: [
-        {
-          journalEntry: {
-            date: 'asc'
-          }
-        },
-        {
-          journalEntry: {
-            entryNo: 'asc'
-          }
+      orderBy: {
+        journalEntry: {
+          date: 'asc'
         }
-      ]
+      }
     });
 
-    // Transform the data for the ledger view
-    const ledgerEntries = items.map(item => ({
-      id: item.id,
-      date: item.journalEntry.date,
-      entryNo: item.journalEntry.entryNo,
-      description: item.description || item.journalEntry.description,
-      debit: item.debit,
-      credit: item.credit
-    }));
+    // Calculate running balance
+    let balance = 0;
+    const ledgerItems = items.map(item => {
+      if (item.debit) {
+        balance += Number(item.amount);
+      } else {
+        balance -= Number(item.amount);
+      }
+      
+      return {
+        id: item.id,
+        date: item.journalEntry.date,
+        description: item.journalEntry.description,
+        reference: item.journalEntry.reference,
+        debit: item.debit ? Number(item.amount) : 0,
+        credit: !item.debit ? Number(item.amount) : 0,
+        balance
+      };
+    });
 
-    return NextResponse.json(ledgerEntries);
+    return NextResponse.json({ items: ledgerItems, balance });
   } catch (error) {
     console.error("[ACCOUNT_LEDGER_GET]", error);
-    return new NextResponse("Internal error", { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 } 

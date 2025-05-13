@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 
 interface RouteParams {
   params: {
@@ -7,41 +8,33 @@ interface RouteParams {
   };
 }
 
-export async function GET(req: Request, { params }: RouteParams) {
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const order = await prisma.order.findUnique({
-      where: {
     // Unwrap params before accessing properties
     const unwrappedParams = await params;
     const id = unwrappedParams.id;
-            id: id,
+
+    const order = await prisma.order.findUnique({
+      where: {
+        id: id,
       },
       include: {
-        customer: {
-          select: {
-            name: true,
-            company: true,
-          },
-        },
-        orderItems: {
-          select: {
-            id: true,
-            stockId: true,
-            price: true,
-            total: true,
-          },
-        },
+        customer: true,
+        orderItems: true,
       },
     });
 
     if (!order) {
-      return new NextResponse("Order not found", { status: 404 });
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
     return NextResponse.json(order);
   } catch (error) {
-    console.error("Error fetching order:", error);
-    return new NextResponse("Error fetching order", { status: 500 });
+    console.error("[ORDER_GET]", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

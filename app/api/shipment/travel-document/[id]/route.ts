@@ -40,10 +40,20 @@ export async function GET(
         order: {
           include: {
             customer: true,
-            orderItems: true,
+            orderItems: {
+              include: {
+                stock: true,
+                divided: true
+              }
+            },
           },
         },
-        shipmentItems: true,
+        shipmentItems: {
+          include: {
+            stock: true,
+            divided: true
+          }
+        },
         shippedByUser: {
           select: {
             id: true,
@@ -57,10 +67,6 @@ export async function GET(
       console.error(`Shipment not found with ID: ${id}`);
       return NextResponse.json({ error: "Shipment not found" }, { status: 404 });
     }
-    
-    // Get the order items associated with this shipment
-    const orderItemIds = shipment.shipmentItems.map(item => item.orderItemId);
-    console.log(`Found ${orderItemIds.length} items associated with this shipment`);
     
     // Create a map of order item IDs to their scanned barcodes (storing all barcodes for each item ID)
     const scannedBarcodesMap: Record<string, string[]> = {};
@@ -76,6 +82,61 @@ export async function GET(
     });
     
     console.log('Scanned barcodes map:', scannedBarcodesMap);
+    
+    // Collect all items to include in the document - both explicitly scanned and associated inventory items
+    const shipmentItems = [];
+    
+    // Process all order items from this order
+    for (const orderItem of shipment.order.orderItems) {
+      // Create a base item for the document
+      const baseItem = {
+        id: orderItem.id,
+        // Store the clean product name without any barcode or roll number
+        productName: orderItem.type || 'Unknown Product',
+        // Store identification numbers separately
+        identifierNumber: '',
+        sku: orderItem.id.substring(0, 8),
+        quantity: Number(orderItem.quantity) || 1,
+        type: orderItem.type,
+        gsm: orderItem.gsm ? Number(orderItem.gsm) : undefined,
+        width: orderItem.width ? Number(orderItem.width) : undefined,
+        length: orderItem.length ? Number(orderItem.length) : undefined,
+        weight: orderItem.weight ? Number(orderItem.weight) : undefined,
+        barcodes: scannedBarcodesMap[orderItem.id] || []
+      };
+      
+      // Add jumbo roll details if present
+      if (orderItem.stockId && orderItem.stock) {
+        // Store the roll number separately
+        baseItem.identifierNumber = orderItem.stock.jumboRollNo;
+        // Add jumbo roll barcode if it exists and isn't already in the list
+        if (orderItem.stock.barcodeId && !baseItem.barcodes.includes(orderItem.stock.barcodeId)) {
+          baseItem.barcodes.push(orderItem.stock.barcodeId);
+        }
+        baseItem.sku = orderItem.stock.jumboRollNo || baseItem.sku;
+        baseItem.gsm = Number(orderItem.stock.gsm);
+      }
+      
+      // Add divided roll details if present
+      if (orderItem.dividedId && orderItem.divided) {
+        // Store the roll number separately
+        baseItem.identifierNumber = orderItem.divided.rollNo;
+        // Add divided roll barcode if it exists and isn't already in the list
+        if (orderItem.divided.barcodeId && !baseItem.barcodes.includes(orderItem.divided.barcodeId)) {
+          baseItem.barcodes.push(orderItem.divided.barcodeId);
+        }
+        baseItem.sku = orderItem.divided.rollNo || baseItem.sku;
+      }
+      
+      // Ensure at least one barcode is available
+      if (baseItem.barcodes.length === 0) {
+        baseItem.barcode = orderItem.id;
+      } else {
+        baseItem.barcode = baseItem.barcodes[0];
+      }
+      
+      shipmentItems.push(baseItem);
+    }
 
     // Format the shipment data for the PDF generator
     const formattedShipment = {
@@ -86,23 +147,7 @@ export async function GET(
       customerEmail: shipment.order.customer.email || '',
       customerPhone: shipment.order.customer.phone,
       address: shipment.order.customer.address || '',
-      items: shipment.order.orderItems
-        .filter(item => orderItemIds.includes(item.id))
-        .map(item => ({
-          id: item.id,
-          productName: item.type || 'Unknown Product',
-          sku: item.id.substring(0, 8),
-          // Store all scanned barcodes for this item
-          barcodes: scannedBarcodesMap[item.id] || [],
-          // Still keep single barcode for backwards compatibility
-          barcode: scannedBarcodesMap[item.id]?.[0] || item.id,
-          quantity: Number(item.quantity) || 1,
-          type: item.type,
-          gsm: item.gsm ? Number(item.gsm) : undefined,
-          width: item.width ? Number(item.width) : undefined,
-          length: item.length ? Number(item.length) : undefined,
-          weight: item.weight ? Number(item.weight) : undefined
-        })),
+      items: shipmentItems,
       createdAt: shipment.shipmentDate.toISOString(),
       processedBy: {
         id: shipment.shippedByUser.id,

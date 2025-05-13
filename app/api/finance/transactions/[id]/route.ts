@@ -1,32 +1,28 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const transaction = await prisma.transaction.findUnique({
     // Unwrap params before accessing properties
     const unwrappedParams = await params;
     const id = unwrappedParams.id;
-          where: { id: id },
+
+    const transaction = await prisma.transaction.findUnique({
+      where: { id: id },
     });
 
     if (!transaction) {
-      return NextResponse.json(
-        { error: "Transaction not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
     }
 
     return NextResponse.json(transaction);
   } catch (error) {
-    console.error("Error fetching transaction:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch transaction" },
-      { status: 500 }
-    );
+    console.error("[TRANSACTION_GET]", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

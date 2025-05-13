@@ -3,37 +3,57 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 
 export async function GET(
-  req: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
-    if (!session) {
-      return new NextResponse("Unauthorized", { status: 401 });
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const entry = await prisma.journalEntry.findUnique({
     // Unwrap params before accessing properties
     const unwrappedParams = await params;
     const id = unwrappedParams.id;
-          where: { id: id },
+
+    const entry = await prisma.journalEntry.findUnique({
+      where: { id: id },
       include: {
         items: {
           include: {
-            account: true
+            account: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                type: true
+              }
+            }
+          }
+        },
+        createdByUser: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        postedByUser: {
+          select: {
+            id: true,
+            name: true
           }
         }
       }
     });
 
     if (!entry) {
-      return new NextResponse("Journal entry not found", { status: 404 });
+      return NextResponse.json({ error: "Journal entry not found" }, { status: 404 });
     }
 
     return NextResponse.json(entry);
   } catch (error) {
     console.error("[JOURNAL_ENTRY_GET]", error);
-    return new NextResponse("Internal error", { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
