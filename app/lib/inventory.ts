@@ -6,12 +6,7 @@ import {
   Result, 
   BarcodeFormat, 
   Exception, 
-  DecodeHintType,
-  HTML5QrcodeScannerConfig,
-  MultiFormatReader,
-  BinaryBitmap,
-  HybridBinarizer,
-  RGBLuminanceSource
+  DecodeHintType
 } from '@zxing/library';
 
 export interface ScanBarcodeResult {
@@ -354,9 +349,16 @@ export async function scanBarcode(useBackCamera: boolean = true, options?: ScanO
               statusText.textContent = 'Scanning... (trying multiple formats)';
               
               // If no jsQR fallback is running, start it
-              if (!jsQRFallbackInterval && error.toString().includes("No MultiFormat Readers were able")) {
-                statusText.textContent = 'Using alternative scanner method...';
-                jsQRFallbackInterval = window.setInterval(processVideoFrameWithJsQR, 200);
+              if (!jsQRFallbackInterval && error) {
+                // Convert error to string safely
+                const errorText = typeof error === 'object' ? 
+                  (error as Record<string, unknown>).message?.toString() || String(error) : 
+                  String(error);
+                
+                if (errorText.includes("No MultiFormat Readers were able")) {
+                  statusText.textContent = 'Using alternative scanner method...';
+                  jsQRFallbackInterval = window.setInterval(processVideoFrameWithJsQR, 200);
+                }
               }
             }
           }
