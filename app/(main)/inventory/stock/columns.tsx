@@ -25,6 +25,7 @@ import { useState, useEffect, useRef } from "react";
 import { RemainingLengthForm } from "../components/remaining-length-form";
 import { useToast } from "@/components/ui/use-toast";
 import JsBarcode from "jsbarcode";
+import { jsPDF } from "jspdf";
 
 // Extend the interface to ensure it includes the inspector property
 declare module "@/hooks/use-stock-data" {
@@ -161,81 +162,50 @@ export const getColumns = (
     );
   };
   
-  // Add a barcode print function
-  const printBarcode = (stock: StockWithInspector) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Please allow pop-ups to print barcodes');
-      return;
-    }
+  // Replace the existing printBarcode function with one that generates a PDF
+  const printBarcode = async (stock: StockWithInspector) => {
+    // Create a new PDF document with 7x5 cm dimensions
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "cm",
+      format: [7, 5]
+    });
+
+    // Generate barcode image
+    const barcodeImage = await new Promise<string>((resolve) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 700;
+      canvas.height = 500;
+
+      JsBarcode(canvas, stock.barcodeId, {
+        format: "CODE128",
+        width: 3,
+        height: 50,
+        displayValue: false,
+        fontSize: 0,
+        font: 'Arial',
+        textMargin: 0,
+        margin: 0
+      });
+
+      resolve(canvas.toDataURL('image/png'));
+    });
+
+    // Header text
+    doc.setFontSize(11);
+    doc.text(stock.type, 3.5, 0.7, { align: "center" });
+    doc.text(`${stock.width} x ${stock.length} x ${stock.gsm}g`, 3.5, 1.2, { align: "center" });
     
-    // Create a document with the same dimensions as in divided page.tsx
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Barcode - ${stock.barcodeId}</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              margin: 0;
-              padding: 10px;
-            }
-            .barcode-container {
-              text-align: center;
-              padding: 10px;
-              width: 7cm;
-              height: 5cm;
-              border: 1px solid #ddd;
-              margin-bottom: 10px;
-              page-break-inside: avoid;
-            }
-            .header {
-              text-align: center;
-              font-size: 11pt;
-              margin-bottom: 5px;
-            }
-            .details {
-              font-size: 10px;
-              margin-top: 5px;
-              text-align: left;
-            }
-            canvas {
-              max-width: 6cm;
-              height: 2cm;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="barcode-container">
-            <div class="header">
-              ${stock.type}<br>
-              ${stock.width} x ${stock.length} x ${stock.gsm}g
-            </div>
-            <canvas id="barcode"></canvas>
-            <div class="footer">
-              ${stock.barcodeId}
-            </div>
-          </div>
-          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-          <script>
-            JsBarcode("#barcode", "${stock.barcodeId}", {
-              format: "CODE128",
-              width: 3,
-              height: 50,
-              displayValue: false,
-              fontSize: 0,
-              margin: 0
-            });
-            setTimeout(() => {
-              window.print();
-              window.close();
-            }, 500);
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    // Add barcode image - centered
+    doc.addImage(barcodeImage, 'PNG', 0.5, 1.6, 6, 2);
+    
+    // Add barcode ID below barcode
+    doc.setFontSize(10);
+    doc.text(stock.barcodeId, 3.5, 4.3, { align: "center" });
+
+    // Save the PDF with a descriptive name including the date
+    const dateStr = format(new Date(), "yyyyMMdd-HHmmss");
+    doc.save(`barcode-${stock.barcodeId}-${dateStr}.pdf`);
   };
   
   return [

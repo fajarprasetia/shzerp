@@ -122,7 +122,7 @@ function StockPage() {
     const doc = new jsPDF({
       orientation: "landscape",
       unit: "cm",
-      format: [7, 5]  // Using the same size as divided page
+      format: [7, 5]  // Exact 7x5 cm size as requested
     });
 
     for (let i = 0; i < stocks.length; i++) {
@@ -134,17 +134,15 @@ function StockPage() {
       // Generate barcode image
       const barcodeImage = await new Promise<string>((resolve) => {
         const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
         canvas.width = 700;
         canvas.height = 500;
 
-        // Use CODE128 format with same settings as divided page
         JsBarcode(canvas, stock.barcodeId, {
           format: "CODE128",
-          width: 3,        // Wider bars
-          height: 50,      // Taller bars
-          displayValue: false,  // Don't show value
-          fontSize: 0,     // No font size
+          width: 3,
+          height: 50,
+          displayValue: false,
+          fontSize: 0,
           font: 'Arial',
           textMargin: 0,
           margin: 0
@@ -153,20 +151,27 @@ function StockPage() {
         resolve(canvas.toDataURL('image/png'));
       });
 
-      // Header text - same as divided page
+      // Header text
       doc.setFontSize(11);
       doc.text(stock.type, 3.5, 0.7, { align: "center" });
       doc.text(`${stock.width} x ${stock.length} x ${stock.gsm}g`, 3.5, 1.2, { align: "center" });
       
-      // Add barcode image - centered like in divided page
+      // Add barcode image - centered
       doc.addImage(barcodeImage, 'PNG', 0.5, 1.6, 6, 2);
       
-      // Add barcode ID below barcode like in divided page
+      // Add barcode ID below barcode
       doc.setFontSize(10);
       doc.text(stock.barcodeId, 3.5, 4.3, { align: "center" });
     }
 
-    doc.save("stock-labels.pdf");
+    // Save the PDF with a descriptive name including the date
+    const dateStr = format(new Date(), "yyyyMMdd-HHmmss");
+    doc.save(`stock-labels-${dateStr}.pdf`);
+    
+    toast({
+      title: t('common.success', 'Success'),
+      description: t('inventory.stock.barcodesPrinted', `${stocks.length} barcodes have been generated and downloaded.`),
+    });
   };
 
   // Add a column for "Status" that shows "Sold" or "Available"
@@ -212,6 +217,25 @@ function StockPage() {
       header: t('inventory.stock.barcodeId', 'Barcode ID'),
       sortingFn: "alphanumeric",
       enableSorting: true,
+      cell: ({ row }) => {
+        return (
+          <div className="flex items-center gap-2">
+            <span>{row.original.barcodeId}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePrintLabel([row.original.id]);
+              }}
+              title={t('inventory.stock.printBarcode', 'Print Barcode')}
+            >
+              <Printer className="h-3 w-3" />
+            </Button>
+          </div>
+        );
+      },
     },
     {
       accessorKey: "type",
@@ -373,7 +397,7 @@ function StockPage() {
                 onClick={() => handlePrintLabel(selectedRows)}
               >
                 <Printer className="h-4 w-4 mr-2" />
-                {t('inventory.stock.printLabels', 'Print Labels')}
+                {t('inventory.stock.printLabels', `Print ${selectedRows.length} Labels`)}
               </Button>
               <Button
                 variant="destructive"
