@@ -37,7 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/use-toast';
 import { ToastAction } from '@/components/ui/toast';
-import { scanBarcode } from '@/lib/inventory';
+import { scanBarcode, scanBarcode128 } from '@/app/lib/inventory';
 
 // For client components, we don't use revalidate or fetchCache directly
 // dynamic is okay though
@@ -475,9 +475,10 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
     setLastScanError(null);
 
     try {
-      // Use the updated scanBarcode function with options
-      const result = await scanBarcode(useBackCamera, {
+      // Use scanBarcode128 for more reliable Code 128 scanning
+      const result = await scanBarcode128({
         timeout: 60000, // 60 seconds maximum scan time
+        successThreshold: 2 // Lower threshold for faster scanning
       });
       
       console.log("Scan result:", result);

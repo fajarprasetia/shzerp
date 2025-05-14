@@ -7,7 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Stock } from "@prisma/client";
 import { BarcodeIcon, Camera, CameraOff } from "lucide-react";
-import { scanBarcode } from "@/lib/inventory";
+import {
+  scanBarcode,
+  scanBarcode128,
+  generateJumboRollNo as generateRollNo,
+} from "@/app/lib/inventory";
 import {
   Select,
   SelectContent,
@@ -65,15 +69,20 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
 
   useEffect(() => {
     if (!initialData) {
-      generateJumboRollNo();
+      generateJumboRollNo().catch(error => {
+        console.error("Error generating roll number:", error);
+        toast({
+          title: t('common.error', 'Error'),
+          description: t('inventory.stock.generateRollNoError', 'Failed to generate roll number. Please try again.'),
+          variant: "destructive"
+        });
+      });
     }
-  }, [initialData]);
+  }, [initialData, t]);
 
   const generateJumboRollNo = async () => {
     try {
-      const response = await fetch("/api/inventory/stock/generate-roll-no");
-      if (!response.ok) throw new Error("Failed to generate roll number");
-      const { rollNo } = await response.json();
+      const rollNo = await generateRollNo();
       setFormData(prev => ({ ...prev, jumboRollNo: rollNo }));
     } catch (error) {
       console.error("Error generating roll number:", error);
@@ -100,7 +109,7 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
   const handleScan = async () => {
     try {
       setIsScanning(true);
-      const result = await scanBarcode(useBackCamera);
+      const result = await scanBarcode128();
       
       if (result.success && result.data) {
         const scannedData: string = result.data!;
@@ -132,7 +141,37 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate required fields before submitting
+    const requiredFields = [
+      'jumboRollNo', 'barcodeId', 'type', 'gsm', 'width', 'length', 'weight', 'containerNo'
+    ];
+    
+    const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
+    
+    if (missingFields.length > 0) {
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('inventory.stock.missingFields', 'Please fill in all required fields: {{fields}}', 
+          { fields: missingFields.join(', ') }),
+        variant: "destructive"
+      });
+      return;
+    }
+    
     try {
+      // Convert numeric values and ensure they're valid numbers
+      const processedData = {
+        ...formData,
+        gsm: parseFloat(formData.gsm) || 0,
+        width: parseFloat(formData.width) || 0,
+        length: parseFloat(formData.length) || 0,
+        weight: parseFloat(formData.weight) || 0,
+        arrivalDate: new Date(formData.arrivalDate),
+      };
+      
+      console.log("Submitting stock data:", processedData);
+      
       const method = initialData ? "PUT" : "POST";
       const url = initialData 
         ? `/api/inventory/stock/${initialData.id}`
@@ -141,22 +180,18 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          gsm: parseFloat(formData.gsm),
-          width: parseFloat(formData.width),
-          length: parseFloat(formData.length),
-          weight: parseFloat(formData.weight),
-          arrivalDate: new Date(formData.arrivalDate),
-        }),
+        body: JSON.stringify(processedData),
       });
 
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || t('inventory.stock.saveError', 'Failed to save stock'));
+        const errorData = await res.json();
+        console.error("Server returned error:", errorData);
+        throw new Error(errorData.error || t('inventory.stock.saveError', 'Failed to save stock'));
       }
 
-      onSubmit(await res.json());
+      const responseData = await res.json();
+      console.log("Stock saved successfully:", responseData);
+      onSubmit(responseData);
     } catch (error) {
       console.error("Error saving stock:", error);
       toast({

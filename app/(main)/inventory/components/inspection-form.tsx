@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { scanBarcode } from "@/lib/inventory";
+import { scanBarcode, scanBarcode128 } from "@/app/lib/inventory";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Camera, CameraOff } from "lucide-react";
 import {
@@ -58,28 +58,17 @@ export function InspectionForm({ item, onSuccess, onCancel }: InspectionFormProp
   const handleScanBarcode = async () => {
     try {
       setIsScanning(true);
-      const result = await scanBarcode(useBackCamera);
+      const result = await scanBarcode128();
       
       if (result.success && result.data) {
         setBarcodeInput(result.data);
-        toast({
-          title: t('common.success', 'Success'),
-          description: t('inventory.inspection.barcodeScanned', 'Barcode scanned successfully'),
-        });
+        toast.success(t('inventory.inspection.barcodeScanned', 'Barcode scanned successfully'));
       } else if (result.error) {
-        toast({
-          title: t('common.error', 'Error'),
-          description: result.error,
-          variant: "destructive",
-        });
+        toast.error(result.error);
       }
     } catch (error) {
       console.error("Error scanning barcode:", error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('inventory.inspection.scanError', 'Failed to scan barcode. Please try again or enter manually.'),
-        variant: "destructive",
-      });
+      toast.error(t('inventory.inspection.scanError', 'Failed to scan barcode. Please try again or enter manually.'));
     } finally {
       setIsScanning(false);
     }
@@ -89,11 +78,7 @@ export function InspectionForm({ item, onSuccess, onCancel }: InspectionFormProp
     e.preventDefault();
 
     if (!barcodeInput) {
-      toast({
-        title: t('common.error', 'Error'),
-        description: t('inventory.inspection.barcodeRequired', 'Barcode is required'),
-        variant: "destructive",
-      });
+      toast.error(t('inventory.inspection.barcodeRequired', 'Barcode is required'));
       return;
     }
 
@@ -119,19 +104,12 @@ export function InspectionForm({ item, onSuccess, onCancel }: InspectionFormProp
         throw new Error(data.error || t('inventory.inspection.inspectionError', 'Failed to complete inspection'));
       }
 
-      toast({
-        title: t('inventory.inspection.inspectionCompleted', 'Inspection Completed'),
-        description: t('inventory.inspection.itemInspected', 'Item successfully inspected'),
-      });
+      toast.success(t('inventory.inspection.itemInspected', 'Item successfully inspected'));
 
       onSuccess();
     } catch (error) {
       console.error("Error during inspection:", error);
-      toast({
-        title: t('common.error', 'Error'),
-        description: error instanceof Error ? error.message : t('inventory.inspection.inspectionError', 'Failed to complete inspection'),
-        variant: "destructive",
-      });
+      toast.error(error instanceof Error ? error.message : t('inventory.inspection.inspectionError', 'Failed to complete inspection'));
     } finally {
       setLoading(false);
     }

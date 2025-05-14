@@ -5,7 +5,7 @@ import { InspectionTable } from "../components/inspection-table";
 import { Loader2, Camera } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { scanBarcode } from "@/lib/inventory";
+import { scanBarcode, scanBarcode128 } from "@/app/lib/inventory";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -138,7 +138,10 @@ export default function InspectionPage() {
   const handleScanBarcode = async () => {
     setIsScanning(true);
     try {
-      const result = await scanBarcode(useBackCamera);
+      // Use the improved Code 128 scanner instead of the generic scanner
+      const result = await scanBarcode128({
+        successThreshold: 2 // Lower threshold for faster scanning
+      });
       
       if (result.success && result.data) {
         const scannedBarcode = result.data;

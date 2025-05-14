@@ -6,7 +6,12 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash, Camera, CameraOff, QrCode, AlertCircle } from "lucide-react";
-import { scanBarcode, validateStockBarcode } from "@/lib/inventory";
+import { 
+  scanBarcode, 
+  scanBarcode128, 
+  validateStockBarcode, 
+  calculateDividedRolls
+} from "@/app/lib/inventory";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -124,7 +129,8 @@ export function DividedStockForm({ mode, onSuccess, onCancel }: DividedStockForm
   const handleScan = async () => {
     try {
       setIsScanning(true);
-      const result = await scanBarcode(useBackCamera);
+      // Use the new Code 128 scanner instead
+      const result = await scanBarcode128();
       
       if (result.success && result.data) {
         if (mode === "new") {

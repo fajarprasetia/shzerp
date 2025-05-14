@@ -8,6 +8,7 @@ import {
   Exception, 
   DecodeHintType
 } from '@zxing/library';
+import Quagga from '@ericblade/quagga2';
 
 export interface ScanBarcodeResult {
   success: boolean;
@@ -28,6 +29,17 @@ export interface ScanOptions {
   enableProgressBar?: boolean;
   showCameraSelection?: boolean;
   formats?: BarcodeFormat[];
+}
+
+export interface Code128ScanOptions {
+  timeout?: number;
+  frequency?: number;
+  numOfWorkers?: number;
+  locator?: {
+    halfSample?: boolean;
+    patchSize?: string;
+  };
+  successThreshold?: number;
 }
 
 export async function scanBarcode(useBackCamera: boolean = true, options?: ScanOptions): Promise<ScanBarcodeResult> {
@@ -188,8 +200,20 @@ export async function scanBarcode(useBackCamera: boolean = true, options?: ScanO
       // Configure hints for better detection
       const hints = new Map();
       hints.set(DecodeHintType.POSSIBLE_FORMATS, formatsToUse);
-      hints.set(DecodeHintType.TRY_HARDER, options?.tryHarder !== false);
+      hints.set(DecodeHintType.TRY_HARDER, true); // Always try harder for Code 128
       hints.set(DecodeHintType.ASSUME_GS1, true);
+      hints.set(DecodeHintType.CHARACTER_SET, 'UTF-8');
+      hints.set(DecodeHintType.PURE_BARCODE, true); // Try without finder patterns
+      
+      // Create specific Code 128 reader
+      const createCode128Reader = () => {
+        const specificHints = new Map();
+        specificHints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]);
+        specificHints.set(DecodeHintType.TRY_HARDER, true);
+        specificHints.set(DecodeHintType.PURE_BARCODE, true);
+        
+        return new BrowserMultiFormatReader(specificHints);
+      };
       
       // Initialize barcode reader with hints
       const codeReader = new BrowserMultiFormatReader(hints);
@@ -248,10 +272,18 @@ export async function scanBarcode(useBackCamera: boolean = true, options?: ScanO
             clearInterval(jsQRFallbackInterval);
             jsQRFallbackInterval = null;
           }
+          
+          // Safety check to ensure elements still exist in the DOM before removing
+          if (modalContainer && modalContainer.parentNode) {
           document.body.removeChild(modalContainer);
+          }
+          
+          if (style && style.parentNode) {
           document.head.removeChild(style);
+          }
         } catch (error) {
           console.error('Error during scanner cleanup:', error);
+          // Continue execution despite errors
         }
       };
       
@@ -332,6 +364,38 @@ export async function scanBarcode(useBackCamera: boolean = true, options?: ScanO
         }
       };
       
+      // Process function for Code 128 specific detection
+      const processForCode128 = () => {
+        if (!ctx || !canvas || !previewElem || !previewElem.videoWidth) return;
+        
+        try {
+          // Re-draw the current video frame with higher contrast for barcode detection
+          canvas.width = previewElem.videoWidth;
+          canvas.height = previewElem.videoHeight;
+          
+          // Apply higher contrast to help with barcode detection
+          ctx.drawImage(previewElem, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          
+          // Enhance contrast
+          const data = imageData.data;
+          for (let i = 0; i < data.length; i += 4) {
+            // Convert to grayscale with higher contrast
+            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            const newVal = avg > 120 ? 255 : 0; // Increase threshold for sharper contrast
+            data[i] = data[i + 1] = data[i + 2] = newVal;
+          }
+          
+          ctx.putImageData(imageData, 0, 0);
+          
+          // Try to read Code 128 with specific reader
+          // This would require browser-side processing or passing to server
+          // For now, we rely on the jsQR and ZXing fallback mechanisms
+        } catch (error) {
+          console.error("Code 128 processing error:", error);
+        }
+      };
+      
       // Function to start the scanner with a specific device
       const startScanner = (deviceId: string | null) => {
         // Start decoding from video device
@@ -356,8 +420,37 @@ export async function scanBarcode(useBackCamera: boolean = true, options?: ScanO
                   String(error);
                 
                 if (errorText.includes("No MultiFormat Readers were able")) {
-                  statusText.textContent = 'Using alternative scanner method...';
-                  jsQRFallbackInterval = window.setInterval(processVideoFrameWithJsQR, 200);
+                  statusText.textContent = 'Using alternative scanner methods...';
+                  
+                  // Start jsQR fallback for QR codes
+                  jsQRFallbackInterval = window.setInterval(() => {
+                    processVideoFrameWithJsQR();
+                    processForCode128(); // Also try Code 128 specific processing
+                  }, 200);
+                  
+                  // Try with a Code 128 specific reader after a short delay
+                  setTimeout(() => {
+                    if (!isProcessing) {
+                      try {
+                        const code128Reader = createCode128Reader();
+                        statusText.textContent = 'Trying Code 128 specific reader...';
+                        
+                        // Switch to Code 128 specific reader
+                        codeReader.reset();
+                        code128Reader.decodeFromVideoDevice(
+                          deviceId,
+                          previewElem,
+                          (result, specificError) => {
+                            if (result) {
+                              handleSuccessfulScan(result.getText());
+                            }
+                          }
+                        );
+                      } catch (e) {
+                        console.error("Failed to create Code 128 reader:", e);
+                      }
+                    }
+                  }, 3000);
                 }
               }
             }
@@ -444,18 +537,348 @@ export async function scanBarcode(useBackCamera: boolean = true, options?: ScanO
   });
 }
 
-export async function generateJumboRollNo(): Promise<string> {
-  const date = new Date();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = String(date.getFullYear()).slice(-2);
-  const count = await prisma.stock.count({
-    where: {
-      jumboRollNo: {
-        startsWith: `SHZ${year}${month}`,
-      },
-    },
+export async function scanBarcode128(options?: Code128ScanOptions): Promise<ScanBarcodeResult> {
+  return new Promise((resolve) => {
+    let isResolved = false; // Flag to track if promise is already resolved
+    let modalContainer: HTMLDivElement | null = null;
+    
+    try {
+      // Create modal container
+      modalContainer = document.createElement('div');
+      modalContainer.style.position = 'fixed';
+      modalContainer.style.top = '0';
+      modalContainer.style.left = '0';
+      modalContainer.style.width = '100%';
+      modalContainer.style.height = '100%';
+      modalContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+      modalContainer.style.zIndex = '9999';
+      modalContainer.style.display = 'flex';
+      modalContainer.style.flexDirection = 'column';
+      modalContainer.style.justifyContent = 'center';
+      modalContainer.style.alignItems = 'center';
+      
+      // Create scanner container
+      const scannerContainer = document.createElement('div');
+      scannerContainer.id = 'quagga-scanner';
+      scannerContainer.style.width = '100%';
+      scannerContainer.style.maxWidth = '640px';
+      scannerContainer.style.height = '480px';
+      scannerContainer.style.position = 'relative';
+      scannerContainer.style.overflow = 'hidden';
+      scannerContainer.style.borderRadius = '8px';
+      
+      // Create scanning guide overlay
+      const overlay = document.createElement('div');
+      overlay.style.position = 'absolute';
+      overlay.style.top = '50%';
+      overlay.style.left = '50%';
+      overlay.style.transform = 'translate(-50%, -50%)';
+      overlay.style.width = '80%';
+      overlay.style.height = '100px';
+      overlay.style.border = '2px dashed #fff';
+      overlay.style.borderRadius = '4px';
+      overlay.style.boxSizing = 'border-box';
+      overlay.style.pointerEvents = 'none';
+      overlay.style.zIndex = '10';
+      
+      // Create instruction text
+      const instruction = document.createElement('div');
+      instruction.textContent = 'Position Code 128 barcode inside the box';
+      instruction.style.color = 'white';
+      instruction.style.marginTop = '20px';
+      instruction.style.fontSize = '16px';
+      instruction.style.fontWeight = 'bold';
+      instruction.style.textAlign = 'center';
+      
+      // Create feedback text
+      const feedbackText = document.createElement('div');
+      feedbackText.textContent = 'Initializing scanner...';
+      feedbackText.style.color = '#ccc';
+      feedbackText.style.marginTop = '10px';
+      feedbackText.style.fontSize = '14px';
+      feedbackText.style.textAlign = 'center';
+      
+      // Create close button
+      const closeButton = document.createElement('button');
+      closeButton.textContent = 'Cancel';
+      closeButton.style.marginTop = '20px';
+      closeButton.style.padding = '10px 20px';
+      closeButton.style.backgroundColor = '#f44336';
+      closeButton.style.color = 'white';
+      closeButton.style.border = 'none';
+      closeButton.style.borderRadius = '4px';
+      closeButton.style.cursor = 'pointer';
+      
+      // Create manual input button
+      const manualInputButton = document.createElement('button');
+      manualInputButton.textContent = 'Enter Manually';
+      manualInputButton.style.marginTop = '10px';
+      manualInputButton.style.padding = '8px 16px';
+      manualInputButton.style.backgroundColor = '#2196F3';
+      manualInputButton.style.color = 'white';
+      manualInputButton.style.border = 'none';
+      manualInputButton.style.borderRadius = '4px';
+      manualInputButton.style.cursor = 'pointer';
+      
+      // Add elements to modal
+      scannerContainer.appendChild(overlay);
+      modalContainer.appendChild(scannerContainer);
+      modalContainer.appendChild(instruction);
+      modalContainer.appendChild(feedbackText);
+      modalContainer.appendChild(manualInputButton);
+      modalContainer.appendChild(closeButton);
+      document.body.appendChild(modalContainer);
+      
+      // Handle close button click
+      closeButton.addEventListener('click', () => {
+        clearTimeout(timeoutId);
+        safeResolve({
+          success: false,
+          data: "",
+          error: 'Scanning cancelled'
+        });
+      });
+      
+      // Handle manual input button click
+      manualInputButton.addEventListener('click', () => {
+        const barcodeInput = window.prompt('Enter barcode manually:');
+        if (barcodeInput && barcodeInput.trim() !== '') {
+          clearTimeout(timeoutId);
+          safeResolve({
+            success: true,
+            data: barcodeInput.trim()
+          });
+        }
+      });
+      
+      // Cleanup function
+      const cleanupScanner = () => {
+        // Prevent multiple cleanups
+        if (!modalContainer) return;
+        
+        try {
+          // First stop Quagga to release camera resources
+          Quagga.stop();
+          
+          // Safety check to ensure the element still exists in the DOM before removing
+          if (modalContainer.parentNode) {
+            document.body.removeChild(modalContainer);
+          }
+          
+          // Set modalContainer to null to prevent further cleanup attempts
+          modalContainer = null;
+        } catch (error) {
+          console.error('Error during scanner cleanup:', error);
+          // Continue execution despite errors
+        }
+      };
+      
+      // Safe resolver that prevents multiple resolves
+      const safeResolve = (result: ScanBarcodeResult) => {
+        if (isResolved) return;
+        isResolved = true;
+        cleanupScanner();
+        resolve(result);
+      };
+      
+      // Set a timeout based on options or default to 60 seconds
+      const timeoutDuration = options?.timeout || 60000;
+      const timeoutId = setTimeout(() => {
+        safeResolve({
+          success: false,
+          data: "",
+          error: 'Scanning timed out. Please try again or enter manually.'
+        });
+      }, timeoutDuration);
+      
+      // Track detections for confidence threshold
+      let detectionCount = 0;
+      const detectionResults: Record<string, number> = {};
+      const successThreshold = options?.successThreshold || 3;
+      
+      // Initialize Quagga
+      Quagga.init({
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: scannerContainer,
+          constraints: {
+            width: { min: 640 },
+            height: { min: 480 },
+            facingMode: "environment",
+            aspectRatio: { min: 1, max: 2 }
+          },
+          area: { // Only read codes in central area
+            top: "30%",
+            right: "10%",
+            left: "10%",
+            bottom: "30%",
+          },
+        },
+        locator: {
+          patchSize: options?.locator?.patchSize || "medium",
+          halfSample: options?.locator?.halfSample !== false
+        },
+        numOfWorkers: options?.numOfWorkers || 4,
+        frequency: options?.frequency || 10,
+        decoder: {
+          readers: ["code_128_reader"],
+          multiple: false,
+        },
+        locate: true
+      }, function(err) {
+        if (err) {
+          console.error("Failed to initialize Quagga:", err);
+          feedbackText.textContent = "Failed to start scanner. Please check camera permissions.";
+          return;
+        }
+        
+        // Start Quagga
+        Quagga.start();
+        feedbackText.textContent = "Scanner ready. Searching for Code 128...";
+        
+        // Draw scan line for visual feedback
+        const canvas = scannerContainer.querySelector('canvas.drawingBuffer');
+        if (canvas) {
+          // Type assertion to HTMLElement to access style property
+          const canvasElement = canvas as HTMLElement;
+          canvasElement.style.position = 'absolute';
+          canvasElement.style.top = '0';
+          canvasElement.style.left = '0';
+        }
+      });
+      
+      // Handle successful detection
+      Quagga.onDetected((result) => {
+        const code = result.codeResult.code;
+        
+        if (!code) return;
+        
+        // Track the detected code frequency
+        detectionResults[code] = (detectionResults[code] || 0) + 1;
+        
+        // Update feedback with confidence level
+        // Type assertion for the codeResult object to access non-standard properties
+        const resultWithConfidence = result.codeResult as { confidence?: number };
+        const confidence = resultWithConfidence.confidence !== undefined ? 
+          Math.round(resultWithConfidence.confidence * 100) / 100 : 
+          0;
+        
+        if (feedbackText) {
+          feedbackText.textContent = `Detected: ${code} (Confidence: ${confidence})`;
+        }
+        
+        // Check if we have enough consistent detections
+        if (detectionResults[code] >= successThreshold) {
+          // Play success beep
+          try {
+            const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU" + Array(100).join("A"));
+            beep.volume = 0.2;
+            beep.play().catch(e => console.log("Couldn't play success sound"));
+          } catch (e) {
+            console.log("Beep error:", e);
+          }
+          
+          // Visual feedback
+          if (overlay) {
+            overlay.style.border = '3px solid #4CAF50';
+          }
+          
+          if (instruction) {
+            instruction.textContent = 'Barcode detected!';
+            instruction.style.color = '#4CAF50';
+          }
+          
+          // Clear timeout
+          clearTimeout(timeoutId);
+          
+          // Clean up after short delay to show success feedback
+          setTimeout(() => {
+            safeResolve({
+              success: true,
+              data: code
+            });
+          }, 500);
+        }
+      });
+      
+      // Draw the scanning line dynamically
+      Quagga.onProcessed((result) => {
+        const drawingCtx = Quagga.canvas.ctx.overlay;
+        const drawingCanvas = Quagga.canvas.dom.overlay;
+        
+        if (!drawingCtx || !drawingCanvas) return;
+        
+        drawingCtx.clearRect(
+          0,
+          0,
+          parseInt(drawingCanvas.getAttribute("width") || "0"),
+          parseInt(drawingCanvas.getAttribute("height") || "0")
+        );
+        
+        if (result) {
+          // Draw scan area
+          if (result.boxes) {
+            drawingCtx.strokeStyle = '#F00';
+            drawingCtx.lineWidth = 2;
+            
+            for (let box of result.boxes) {
+              drawingCtx.beginPath();
+              drawingCtx.moveTo(box[0][0], box[0][1]);
+              drawingCtx.lineTo(box[1][0], box[1][1]);
+              drawingCtx.lineTo(box[2][0], box[2][1]);
+              drawingCtx.lineTo(box[3][0], box[3][1]);
+              drawingCtx.lineTo(box[0][0], box[0][1]);
+              drawingCtx.stroke();
+            }
+          }
+          
+          // Draw guide box in scanning area
+          if (result.codeResult && result.codeResult.code) {
+            drawingCtx.font = "24px Arial";
+            drawingCtx.fillStyle = "#00FF00";
+            drawingCtx.fillText(
+              result.codeResult.code,
+              10,
+              30
+            );
+          }
+        }
+      });
+      
+    } catch (error) {
+      if (modalContainer && modalContainer.parentNode) {
+        try {
+          document.body.removeChild(modalContainer);
+        } catch (cleanupError) {
+          console.error('Error removing modal in catch block:', cleanupError);
+        }
+      }
+      
+      resolve({
+        success: false,
+        data: "",
+        error: error instanceof Error ? error.message : 'Failed to initialize scanner'
+      });
+    }
   });
-  return `SHZ${year}${month}${String(count + 1).padStart(4, '0')}`;
+}
+
+export async function generateJumboRollNo(): Promise<string> {
+  try {
+    // Call the API endpoint instead of using Prisma directly
+    const response = await fetch('/api/inventory/stock/generate-roll-no');
+    
+    if (!response.ok) {
+      throw new Error('Failed to generate roll number');
+    }
+    
+    const data = await response.json();
+    return data.rollNo;
+  } catch (error) {
+    console.error('Error generating roll number:', error);
+    throw error;
+  }
 }
 
 export function calculateDividedRolls(parentLength: number, count: number): { lengthPerRoll: number, remainingLength: number } {
