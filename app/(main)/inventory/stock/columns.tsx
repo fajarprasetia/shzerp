@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TFunction } from "i18next";
 import { Button } from "@/components/ui/button";
-import { Pencil, Trash, Ruler } from "lucide-react";
+import { Pencil, Trash, Ruler, Printer } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,9 +21,10 @@ import {
 } from "@/components/ui/popover";
 import { MoreHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { RemainingLengthForm } from "../components/remaining-length-form";
 import { useToast } from "@/components/ui/use-toast";
+import JsBarcode from "jsbarcode";
 
 // Extend the interface to ensure it includes the inspector property
 declare module "@/hooks/use-stock-data" {
@@ -131,6 +132,112 @@ export const getColumns = (
     );
   };
   
+  // Define a Barcode component
+  const BarcodeDisplay = ({ barcodeId }: { barcodeId: string }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    
+    useEffect(() => {
+      if (canvasRef.current && barcodeId) {
+        try {
+          JsBarcode(canvasRef.current, barcodeId, {
+            format: "CODE128",
+            width: 3,        // Increased bar width to match divided page
+            height: 50,      // Increased bar height to match divided page
+            displayValue: false, // Don't show the value directly on barcode
+            fontSize: 0,     // No font size needed
+            textMargin: 0,   // No text margin
+            margin: 0        // No margin
+          });
+        } catch (error) {
+          console.error("Error generating barcode:", error);
+        }
+      }
+    }, [barcodeId]);
+    
+    return (
+      <div className="flex flex-col items-center">
+        <canvas ref={canvasRef} className="w-full" />
+      </div>
+    );
+  };
+  
+  // Add a barcode print function
+  const printBarcode = (stock: StockWithInspector) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Please allow pop-ups to print barcodes');
+      return;
+    }
+    
+    // Create a document with the same dimensions as in divided page.tsx
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Barcode - ${stock.barcodeId}</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              margin: 0;
+              padding: 10px;
+            }
+            .barcode-container {
+              text-align: center;
+              padding: 10px;
+              width: 7cm;
+              height: 5cm;
+              border: 1px solid #ddd;
+              margin-bottom: 10px;
+              page-break-inside: avoid;
+            }
+            .header {
+              text-align: center;
+              font-size: 11pt;
+              margin-bottom: 5px;
+            }
+            .details {
+              font-size: 10px;
+              margin-top: 5px;
+              text-align: left;
+            }
+            canvas {
+              max-width: 6cm;
+              height: 2cm;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="barcode-container">
+            <div class="header">
+              ${stock.type}<br>
+              ${stock.width} x ${stock.length} x ${stock.gsm}g
+            </div>
+            <canvas id="barcode"></canvas>
+            <div class="footer">
+              ${stock.barcodeId}
+            </div>
+          </div>
+          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+          <script>
+            JsBarcode("#barcode", "${stock.barcodeId}", {
+              format: "CODE128",
+              width: 3,
+              height: 50,
+              displayValue: false,
+              fontSize: 0,
+              margin: 0
+            });
+            setTimeout(() => {
+              window.print();
+              window.close();
+            }, 500);
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+  
   return [
     {
       id: "select",
@@ -162,6 +269,26 @@ export const getColumns = (
     {
       accessorKey: "barcodeId",
       header: t('inventory.stock.barcodeId', 'Barcode ID'),
+      cell: ({ row }) => {
+        const barcodeId = row.getValue("barcodeId") as string;
+        return (
+          <div className="flex flex-col gap-2">
+            <BarcodeDisplay barcodeId={barcodeId} />
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="mt-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                printBarcode(row.original);
+              }}
+            >
+              <Printer className="h-3 w-3 mr-1" />
+              {t('inventory.stock.printSingle', 'Print')}
+            </Button>
+          </div>
+        );
+      },
       filterFn: (row, id, value) => {
         const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
         return searchValue.includes(value.toLowerCase());

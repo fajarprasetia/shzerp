@@ -121,14 +121,14 @@ function StockPage() {
 
     const doc = new jsPDF({
       orientation: "landscape",
-      unit: "mm",
-      format: [50, 25],
+      unit: "cm",
+      format: [7, 5]  // Using the same size as divided page
     });
 
     for (let i = 0; i < stocks.length; i++) {
       const stock = stocks[i];
       if (i > 0) {
-        doc.addPage([50, 25], "landscape");
+        doc.addPage([7, 5], "landscape");
       }
 
       // Generate barcode image
@@ -138,13 +138,13 @@ function StockPage() {
         canvas.width = 700;
         canvas.height = 500;
 
-        // Use CODE128 format for barcodes - make it wider and taller
+        // Use CODE128 format with same settings as divided page
         JsBarcode(canvas, stock.barcodeId, {
           format: "CODE128",
-          width: 3,             // Wider bars
-          height: 50,           // Taller bars
-          displayValue: false,   // Show the barcode value
-          fontSize: 0,         // Larger font size
+          width: 3,        // Wider bars
+          height: 50,      // Taller bars
+          displayValue: false,  // Don't show value
+          fontSize: 0,     // No font size
           font: 'Arial',
           textMargin: 0,
           margin: 0
@@ -153,14 +153,17 @@ function StockPage() {
         resolve(canvas.toDataURL('image/png'));
       });
 
-      // Add barcode image - make it take up more space now that QR is removed
-      doc.addImage(barcodeImage, 'PNG', 2, 2, 46, 13);
-
-      // Add text information below barcode
-      doc.setFontSize(8); // Slightly larger text
-      doc.text(`${t('inventory.stock.type', 'Type')}: ${stock.type}`, 2, 18);
-      doc.text(`${t('inventory.stock.gsm', 'GSM')}: ${stock.gsm}`, 2, 21);
-      doc.text(`${t('inventory.stock.size', 'Size')}: ${stock.width}x${stock.length}mm`, 2, 24);
+      // Header text - same as divided page
+      doc.setFontSize(11);
+      doc.text(stock.type, 3.5, 0.7, { align: "center" });
+      doc.text(`${stock.width} x ${stock.length} x ${stock.gsm}g`, 3.5, 1.2, { align: "center" });
+      
+      // Add barcode image - centered like in divided page
+      doc.addImage(barcodeImage, 'PNG', 0.5, 1.6, 6, 2);
+      
+      // Add barcode ID below barcode like in divided page
+      doc.setFontSize(10);
+      doc.text(stock.barcodeId, 3.5, 4.3, { align: "center" });
     }
 
     doc.save("stock-labels.pdf");

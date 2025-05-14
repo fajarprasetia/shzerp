@@ -35,6 +35,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Unwrap params to get the id
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+    
     const body = await request.json();
     const { customerId, orderItems, note, totalAmount } = body;
 
@@ -144,6 +148,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Unwrap params to get the id
+    const unwrappedParams = await params;
+    const id = unwrappedParams.id;
+    
     // Find the order with all related records
     const existingOrder = await prisma.order.findUnique({
       where: { id: id },
