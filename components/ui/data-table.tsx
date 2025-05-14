@@ -36,6 +36,10 @@ interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   searchKey?: string;
+  searchableColumns?: {
+    id: string;
+    displayName: string;
+  }[];
   onRowClick?: (row: TData) => void;
   noResults?: React.ReactNode;
   initialSorting?: SortingState;
@@ -47,6 +51,7 @@ export function DataTable<TData, TValue>({
   columns,
   data,
   searchKey,
+  searchableColumns = [],
   onRowClick,
   noResults,
   initialSorting = [],
@@ -56,6 +61,12 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = React.useState({});
+  const [searchColumn, setSearchColumn] = useState<string>(searchKey || (searchableColumns.length > 0 ? searchableColumns[0].id : ""));
+
+  // Use the searchKey as a searchable column if provided for backward compatibility
+  const allSearchableColumns = searchKey && !searchableColumns.some(col => col.id === searchKey)
+    ? [{ id: searchKey, displayName: "Search" }, ...searchableColumns]
+    : searchableColumns;
 
   const table = useReactTable({
     data,
@@ -87,13 +98,30 @@ export function DataTable<TData, TValue>({
 
   return (
     <div>
-      {searchKey && (
-        <div className="flex items-center py-4">
+      {allSearchableColumns.length > 0 && (
+        <div className="flex items-center py-4 gap-2">
+          {allSearchableColumns.length > 1 && (
+            <Select
+              value={searchColumn}
+              onValueChange={setSearchColumn}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select field to search" />
+              </SelectTrigger>
+              <SelectContent>
+                {allSearchableColumns.map((column) => (
+                  <SelectItem key={column.id} value={column.id}>
+                    {column.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Input
-            placeholder="Search..."
-            value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
+            placeholder={`Search by ${allSearchableColumns.find(col => col.id === searchColumn)?.displayName || 'search term'}...`}
+            value={(table.getColumn(searchColumn)?.getFilterValue() as string) ?? ""}
             onChange={(event) =>
-              table.getColumn(searchKey)?.setFilterValue(event.target.value)
+              table.getColumn(searchColumn)?.setFilterValue(event.target.value)
             }
             className="max-w-sm"
           />

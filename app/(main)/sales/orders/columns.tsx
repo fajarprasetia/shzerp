@@ -97,19 +97,36 @@ export function getColumns(
           </Button>
         );
       },
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
-      accessorKey: "customer",
+      id: "customer",
       header: t('sales.orders.customer', 'Customer'),
+      accessorFn: (row) => `${row.customer.name} - ${row.customer.company}`,
       cell: ({ row }) => `${row.original.customer.name} - ${row.original.customer.company}`,
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
       accessorKey: "sales",
       header: t('sales.orders.sales', 'Sales'),
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
       accessorKey: "type",
       header: t('sales.orders.type', 'Type'),
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
       id: "itemCount",

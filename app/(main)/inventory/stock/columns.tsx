@@ -154,26 +154,56 @@ export const getColumns = (
     {
       accessorKey: "jumboRollNo",
       header: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.'),
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
       accessorKey: "barcodeId",
       header: t('inventory.stock.barcodeId', 'Barcode ID'),
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
       accessorKey: "type",
       header: t('inventory.stock.type', 'Type'),
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
-      accessorKey: "gsm",
+      id: "gsm",
       header: t('inventory.stock.gsm', 'GSM'),
+      accessorFn: (row) => row.gsm?.toString() || '',
+      cell: ({ row }) => row.original.gsm,
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
-      accessorKey: "width",
+      id: "width",
       header: t('inventory.stock.width', 'Width (mm)'),
+      accessorFn: (row) => row.width?.toString() || '',
+      cell: ({ row }) => row.original.width,
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
-      accessorKey: "length",
+      id: "length",
       header: t('inventory.stock.length', 'Length (mm)'),
+      accessorFn: (row) => row.length?.toString() || '',
+      cell: ({ row }) => row.original.length,
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
     },
     {
       accessorKey: "remainingLength",

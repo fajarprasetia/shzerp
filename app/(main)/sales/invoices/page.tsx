@@ -27,6 +27,8 @@ import { generateInvoicePDF } from "./invoice-generator";
 import { withPermission } from "@/app/components/with-permission";
 import { useTranslation } from "react-i18next";
 import i18nInstance from "@/app/i18n";
+import { DataTable } from "@/components/ui/data-table";
+import { ColumnDef } from "@tanstack/react-table";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -461,6 +463,107 @@ function InvoicesPage() {
     fetchInvoices();
   };
 
+  // Create columns definition for the DataTable
+  const columns: ColumnDef<Invoice>[] = [
+    {
+      accessorKey: "invoiceNo",
+      header: t('sales.invoices.invoiceNo', 'Invoice No'),
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
+    },
+    {
+      accessorKey: "customerName",
+      header: t('sales.invoices.customer', 'Customer'),
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
+    },
+    {
+      accessorKey: "totalAmount",
+      header: t('sales.invoices.amount', 'Amount'),
+      cell: ({ row }) => formatCurrency(row.original.totalAmount),
+    },
+    {
+      accessorKey: "paymentStatus",
+      header: t('sales.invoices.status', 'Status'),
+      cell: ({ row }) => {
+        const status = row.getValue("paymentStatus") as string;
+        return (
+          <Badge
+            variant={
+              status === "PAID"
+                ? "success"
+                : "destructive"
+            }
+          >
+            {status === "PAID" 
+              ? t('sales.invoices.statuses.paid', 'Paid')
+              : t('sales.invoices.statuses.pending', 'Pending')}
+          </Badge>
+        );
+      },
+      filterFn: (row, id, value) => {
+        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
+        return searchValue.includes(value.toLowerCase());
+      },
+    },
+    {
+      accessorKey: "createdAt",
+      header: t('sales.invoices.createdAt', 'Created At'),
+      cell: ({ row }) => {
+        return row.original.createdAt
+          ? new Date(row.original.createdAt).toLocaleDateString()
+          : "N/A";
+      },
+    },
+    {
+      id: "actions",
+      header: t('common.actions', 'Actions'),
+      cell: ({ row }) => {
+        const invoice = row.original;
+        return (
+          <div className="flex space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePrint(invoice)}
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              {t('sales.invoices.downloadPDF', 'Download PDF')}
+            </Button>
+            {invoice.paymentStatus !== "PAID" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleUploadClick(invoice.id)}
+                disabled={isUploading && uploadingInvoiceId === invoice.id}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                {isUploading && uploadingInvoiceId === invoice.id
+                  ? t('common.loading', 'Uploading...')
+                  : invoice.paymentImage
+                  ? t('sales.invoices.replaceProof', 'Replace Proof')
+                  : t('sales.invoices.uploadProof', 'Upload Proof')}
+              </Button>
+            )}
+            {invoice.paymentImage && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedImage(getPaymentImageUrl(invoice) || null)}
+              >
+                {t('common.view', 'View')}
+              </Button>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+
   // Return a loading placeholder while mounting to avoid hydration issues
   if (!mounted) {
     return <div className="container mx-auto py-10">{t('common.loading', 'Loading...')}</div>;
@@ -498,97 +601,31 @@ function InvoicesPage() {
         </div>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('sales.invoices.invoiceNo', 'Invoice No')}</TableHead>
-              <TableHead>{t('sales.invoices.customer', 'Customer')}</TableHead>
-              <TableHead>{t('sales.invoices.amount', 'Amount')}</TableHead>
-              <TableHead>{t('sales.invoices.status', 'Status')}</TableHead>
-              <TableHead>{t('sales.invoices.createdAt', 'Created At')}</TableHead>
-              <TableHead>{t('common.actions', 'Actions')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
-                  <div className="flex justify-center">
-                    <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full"></div>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : invoices.length > 0 ? (
-              invoices.map((invoice) => (
-                <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">{invoice.invoiceNo}</TableCell>
-                  <TableCell>{invoice.customerName}</TableCell>
-                  <TableCell>{formatCurrency(invoice.totalAmount)}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        invoice.paymentStatus === "PAID"
-                          ? "success"
-                          : "destructive"
-                      }
-                    >
-                      {invoice.paymentStatus === "PAID" 
-                        ? t('sales.invoices.statuses.paid', 'Paid')
-                        : t('sales.invoices.statuses.pending', 'Pending')}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {invoice.createdAt
-                      ? new Date(invoice.createdAt).toLocaleDateString()
-                      : "N/A"}
-                  </TableCell>
-                  <TableCell className="flex space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePrint(invoice)}
-                    >
-                      <Printer className="h-4 w-4 mr-2" />
-                      {t('sales.invoices.downloadPDF', 'Download PDF')}
-                    </Button>
-                    {invoice.paymentStatus !== "PAID" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleUploadClick(invoice.id)}
-                        disabled={isUploading && uploadingInvoiceId === invoice.id}
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        {isUploading && uploadingInvoiceId === invoice.id
-                          ? t('common.loading', 'Uploading...')
-                          : invoice.paymentImage
-                          ? t('sales.invoices.replaceProof', 'Replace Proof')
-                          : t('sales.invoices.uploadProof', 'Upload Proof')}
-                      </Button>
-                    )}
-                    {invoice.paymentImage && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSelectedImage(getPaymentImageUrl(invoice) || null)}
-                      >
-                        {t('common.view', 'View')}
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
-                  {t('sales.invoices.noInvoices', 'No invoices available')}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {isLoading ? (
+        <div className="flex justify-center py-8">
+          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full"></div>
+        </div>
+      ) : (
+        <DataTable 
+          columns={columns}
+          data={invoices}
+          searchableColumns={[
+            { id: "invoiceNo", displayName: t('sales.invoices.invoiceNo', 'Invoice No') },
+            { id: "customerName", displayName: t('sales.invoices.customer', 'Customer') },
+            { id: "paymentStatus", displayName: t('sales.invoices.status', 'Status') }
+          ]}
+          enableSorting={true}
+          noResults={
+            <div className="text-center py-8">
+              {error ? (
+                <div className="text-destructive">{error}</div>
+              ) : (
+                t('sales.invoices.noInvoices', 'No invoices available')
+              )}
+            </div>
+          }
+        />
+      )}
 
       <input
         type="file"

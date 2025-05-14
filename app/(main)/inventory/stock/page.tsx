@@ -407,6 +407,14 @@ function StockPage() {
               columns={columns}
               data={filteredData || []} 
               enableSorting={true}
+              searchableColumns={[
+                { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
+                { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
+                { id: "type", displayName: t('inventory.stock.type', 'Type') },
+                { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
+                { id: "width", displayName: t('inventory.stock.width', 'Width') },
+                { id: "length", displayName: t('inventory.stock.length', 'Length') }
+              ]}
             />
           </TabsContent>
           
@@ -415,6 +423,14 @@ function StockPage() {
               columns={columns}
               data={filteredData || []} 
               enableSorting={true}
+              searchableColumns={[
+                { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
+                { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
+                { id: "type", displayName: t('inventory.stock.type', 'Type') },
+                { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
+                { id: "width", displayName: t('inventory.stock.width', 'Width') },
+                { id: "length", displayName: t('inventory.stock.length', 'Length') }
+              ]}
             />
           </TabsContent>
           
@@ -423,6 +439,14 @@ function StockPage() {
               columns={columns}
               data={filteredData || []} 
               enableSorting={true}
+              searchableColumns={[
+                { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
+                { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
+                { id: "type", displayName: t('inventory.stock.type', 'Type') },
+                { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
+                { id: "width", displayName: t('inventory.stock.width', 'Width') },
+                { id: "length", displayName: t('inventory.stock.length', 'Length') }
+              ]}
             />
           </TabsContent>
         </Tabs>

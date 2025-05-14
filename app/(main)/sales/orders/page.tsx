@@ -302,6 +302,12 @@ function OrdersPage() {
       <DataTable 
         columns={columns}
         data={orders} 
+        searchableColumns={[
+          { id: "orderNo", displayName: t('sales.orders.orderNo', 'Order No.') },
+          { id: "customer", displayName: t('sales.orders.customer', 'Customer') },
+          { id: "sales", displayName: t('sales.orders.sales', 'Sales') },
+          { id: "type", displayName: t('sales.orders.type', 'Type') }
+        ]}
       />
 
       <Dialog open={showForm} onOpenChange={setShowForm}>

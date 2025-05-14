@@ -276,10 +276,11 @@ export default function DividedPage() {
       cell: ({ row }) => row.original.stockId === "current" ? t('inventory.divided.current', 'Current') : (row.original as ExtendedDividedInfo).stock?.type || '-',
     },
     {
-      accessorKey: "gsm",
+      id: "gsm",
       header: t('inventory.divided.gsm', 'GSM'),
       sortingFn: "basic",
       enableSorting: true,
+      accessorFn: (row) => row.stockId === "current" ? "" : row.stock?.gsm?.toString() || '',
       cell: ({ row }) => row.original.stockId === "current" ? "-" : (row.original as ExtendedDividedInfo).stock?.gsm || '-',
     },
     {
@@ -300,17 +301,19 @@ export default function DividedPage() {
       },
     },
     {
-      accessorKey: "width",
+      id: "width",
       header: t('inventory.divided.width', 'Width'),
       sortingFn: "basic",
       enableSorting: true,
+      accessorFn: (row) => row.width.toString(),
       cell: ({ row }) => `${row.original.width}mm`,
     },
     {
-      accessorKey: "length",
+      id: "length",
       header: t('inventory.divided.length', 'Length'),
       sortingFn: "basic",
       enableSorting: true,
+      accessorFn: (row) => row.length.toString(),
       cell: ({ row }) => `${row.original.length}m`,
     },
     {
@@ -462,7 +465,12 @@ export default function DividedPage() {
             data={filteredData || []} 
             enableSorting={true}
             initialSorting={initialSorting}
-            searchKey="rollNo"
+            searchableColumns={[
+              { id: "rollNo", displayName: t('inventory.divided.rollNo', 'Roll No') },
+              { id: "gsm", displayName: t('inventory.divided.gsm', 'GSM') },
+              { id: "width", displayName: t('inventory.divided.width', 'Width') },
+              { id: "length", displayName: t('inventory.divided.length', 'Length') }
+            ]}
           />
         </TabsContent>
         
@@ -472,7 +480,12 @@ export default function DividedPage() {
             data={filteredData || []}
             enableSorting={true}
             initialSorting={initialSorting}
-            searchKey="rollNo"
+            searchableColumns={[
+              { id: "rollNo", displayName: t('inventory.divided.rollNo', 'Roll No') },
+              { id: "gsm", displayName: t('inventory.divided.gsm', 'GSM') },
+              { id: "width", displayName: t('inventory.divided.width', 'Width') },
+              { id: "length", displayName: t('inventory.divided.length', 'Length') }
+            ]}
           />
         </TabsContent>
       </Tabs>
