@@ -37,11 +37,151 @@ declare module "@/hooks/use-stock-data" {
   }
 }
 
-// Create a function that returns the columns with translations
-// Accept t function and router as parameters
+// Create a context for selected barcode IDs
+const SelectedBarcodesContext = createContext<{
+  selectedBarcodes: string[];
+  setSelectedBarcodes: React.Dispatch<React.SetStateAction<string[]>>;
+  printSelectedBarcodes: () => Promise<void>;
+}>({
+  selectedBarcodes: [],
+  setSelectedBarcodes: () => {},
+  printSelectedBarcodes: async () => {},
+});
+
+// Create a provider component
+export const SelectedBarcodesProvider = ({ children }: { children: React.ReactNode }) => {
+  const [selectedBarcodes, setSelectedBarcodes] = useState<string[]>([]);
+  const { toast } = useToast();
+
+  // Function to print multiple barcodes as a single PDF
+  const printSelectedBarcodes = async () => {
+    if (selectedBarcodes.length === 0) return;
+
+    // Fetch stock data for selected barcodes
+    try {
+      const response = await fetch(`/api/inventory/stock?ids=${selectedBarcodes.join(',')}`);
+      if (!response.ok) throw new Error('Failed to fetch selected stock data');
+      
+      const stocks: StockWithInspector[] = await response.json();
+      
+      if (!stocks.length) {
+        toast({
+          title: "Error",
+          description: "No stock items found for selected barcodes",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Create a new PDF document
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "cm",
+        format: [7, 5]
+      });
+
+      for (let i = 0; i < stocks.length; i++) {
+        const stock = stocks[i];
+        if (i > 0) {
+          doc.addPage([7, 5], "landscape");
+        }
+
+        // Generate barcode image
+        const barcodeImage = await new Promise<string>((resolve) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 700;
+          canvas.height = 500;
+
+          JsBarcode(canvas, stock.barcodeId, {
+            format: "CODE128",
+            width: 3,
+            height: 50,
+            displayValue: false,
+            fontSize: 0,
+            font: 'Arial',
+            textMargin: 0,
+            margin: 0
+          });
+
+          resolve(canvas.toDataURL('image/png'));
+        });
+
+        // Header text
+        doc.setFontSize(11);
+        doc.text(stock.type, 3.5, 0.7, { align: "center" });
+        doc.text(`${stock.width} x ${stock.length} x ${stock.gsm}g`, 3.5, 1.2, { align: "center" });
+        
+        // Add barcode image - centered
+        doc.addImage(barcodeImage, 'PNG', 0.5, 1.6, 6, 2);
+        
+        // Add barcode ID below barcode
+        doc.setFontSize(10);
+        doc.text(stock.barcodeId, 3.5, 4.3, { align: "center" });
+      }
+
+      // Save the PDF with a descriptive name including the date
+      const dateStr = format(new Date(), "yyyyMMdd-HHmmss");
+      doc.save(`batch-barcodes-${dateStr}.pdf`);
+      
+      toast({
+        title: "Success",
+        description: `${stocks.length} barcodes have been downloaded as PDF`,
+      });
+      
+      // Clear selection after printing
+      setSelectedBarcodes([]);
+    } catch (error) {
+      console.error("Error printing batch barcodes:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate barcode PDF",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <SelectedBarcodesContext.Provider 
+      value={{ selectedBarcodes, setSelectedBarcodes, printSelectedBarcodes }}
+    >
+      {children}
+    </SelectedBarcodesContext.Provider>
+  );
+};
+
+// Create a hook to use the context
+export const useSelectedBarcodes = () => useContext(SelectedBarcodesContext);
+
+// Create a BatchPrintButton component
+export const BatchPrintButton = () => {
+  const { selectedBarcodes, printSelectedBarcodes } = useSelectedBarcodes();
+  const { t } = useTranslation();
+  
+  if (selectedBarcodes.length === 0) return null;
+  
+  return (
+    <Button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        printSelectedBarcodes();
+      }}
+      className="mb-4"
+      size="sm"
+    >
+      <Printer className="h-4 w-4 mr-2" />
+      {t('inventory.stock.printSelectedBarcodes', `Print ${selectedBarcodes.length} Selected Barcodes`)}
+    </Button>
+  );
+};
+
+// Create the columns with the checkbox component integrated with the context
+// Pass selectedBarcodes and setSelectedBarcodes as parameters
 export const getColumns = (
   t: TFunction,
   router: any,
+  selectedBarcodes: string[],
+  setSelectedBarcodes: (ids: string[]) => void,
   renderActions?: (row: StockWithInspector) => React.ReactNode,
   onDataUpdate?: () => void
 ): ColumnDef<StockWithInspector>[] => {
@@ -215,14 +355,33 @@ export const getColumns = (
       header: ({ table }) => (
         <Checkbox
           checked={table.getIsAllPageRowsSelected()}
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          onCheckedChange={(value) => {
+            table.toggleAllPageRowsSelected(!!value);
+            
+            // Update selected barcodes in the context when selecting/deselecting all
+            if (value) {
+              const allIds = table.getFilteredRowModel().rows.map(row => row.original.id);
+              setSelectedBarcodes(allIds);
+            } else {
+              setSelectedBarcodes([]);
+            }
+          }}
           aria-label={t('common.selectAll', 'Select all')}
         />
       ),
       cell: ({ row }) => (
         <Checkbox
           checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
+          onCheckedChange={(value) => {
+            row.toggleSelected(!!value);
+            
+            // Update selected barcodes in the context
+            if (value) {
+              setSelectedBarcodes([...selectedBarcodes, row.original.id]);
+            } else {
+              setSelectedBarcodes(selectedBarcodes.filter(id => id !== row.original.id));
+            }
+          }}
           aria-label={t('common.selectRow', 'Select row')}
         />
       ),
@@ -245,7 +404,6 @@ export const getColumns = (
         return (
           <div className="flex flex-col gap-2">
             <div className="flex items-center">
-              <BarcodeCheckbox stock={row.original} />
               <BarcodeDisplay barcodeId={barcodeId} />
             </div>
             <Button 
@@ -399,163 +557,4 @@ export const getColumns = (
       enableHiding: false,
     },
   ];
-};
-
-// Create a context for selected barcode IDs
-const SelectedBarcodesContext = createContext<{
-  selectedBarcodes: string[];
-  setSelectedBarcodes: React.Dispatch<React.SetStateAction<string[]>>;
-  printSelectedBarcodes: () => Promise<void>;
-}>({
-  selectedBarcodes: [],
-  setSelectedBarcodes: () => {},
-  printSelectedBarcodes: async () => {},
-});
-
-// Create a provider component
-export const SelectedBarcodesProvider = ({ children }: { children: React.ReactNode }) => {
-  const [selectedBarcodes, setSelectedBarcodes] = useState<string[]>([]);
-  const { toast } = useToast();
-
-  // Function to print multiple barcodes as a single PDF
-  const printSelectedBarcodes = async () => {
-    if (selectedBarcodes.length === 0) return;
-
-    // Fetch stock data for selected barcodes
-    try {
-      const response = await fetch(`/api/inventory/stock?ids=${selectedBarcodes.join(',')}`);
-      if (!response.ok) throw new Error('Failed to fetch selected stock data');
-      
-      const stocks: StockWithInspector[] = await response.json();
-      
-      if (!stocks.length) {
-        toast({
-          title: "Error",
-          description: "No stock items found for selected barcodes",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Create a new PDF document
-      const doc = new jsPDF({
-        orientation: "landscape",
-        unit: "cm",
-        format: [7, 5]
-      });
-
-      for (let i = 0; i < stocks.length; i++) {
-        const stock = stocks[i];
-        if (i > 0) {
-          doc.addPage([7, 5], "landscape");
-        }
-
-        // Generate barcode image
-        const barcodeImage = await new Promise<string>((resolve) => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 700;
-          canvas.height = 500;
-
-          JsBarcode(canvas, stock.barcodeId, {
-            format: "CODE128",
-            width: 3,
-            height: 50,
-            displayValue: false,
-            fontSize: 0,
-            font: 'Arial',
-            textMargin: 0,
-            margin: 0
-          });
-
-          resolve(canvas.toDataURL('image/png'));
-        });
-
-        // Header text
-        doc.setFontSize(11);
-        doc.text(stock.type, 3.5, 0.7, { align: "center" });
-        doc.text(`${stock.width} x ${stock.length} x ${stock.gsm}g`, 3.5, 1.2, { align: "center" });
-        
-        // Add barcode image - centered
-        doc.addImage(barcodeImage, 'PNG', 0.5, 1.6, 6, 2);
-        
-        // Add barcode ID below barcode
-        doc.setFontSize(10);
-        doc.text(stock.barcodeId, 3.5, 4.3, { align: "center" });
-      }
-
-      // Save the PDF with a descriptive name including the date
-      const dateStr = format(new Date(), "yyyyMMdd-HHmmss");
-      doc.save(`batch-barcodes-${dateStr}.pdf`);
-      
-      toast({
-        title: "Success",
-        description: `${stocks.length} barcodes have been downloaded as PDF`,
-      });
-      
-      // Clear selection after printing
-      setSelectedBarcodes([]);
-    } catch (error) {
-      console.error("Error printing batch barcodes:", error);
-      toast({
-        title: "Error",
-        description: "Failed to generate barcode PDF",
-        variant: "destructive",
-      });
-    }
-  };
-
-  return (
-    <SelectedBarcodesContext.Provider 
-      value={{ selectedBarcodes, setSelectedBarcodes, printSelectedBarcodes }}
-    >
-      {children}
-    </SelectedBarcodesContext.Provider>
-  );
-};
-
-// Create a hook to use the context
-export const useSelectedBarcodes = () => useContext(SelectedBarcodesContext);
-
-// Create a BatchPrintButton component
-export const BatchPrintButton = () => {
-  const { selectedBarcodes, printSelectedBarcodes } = useSelectedBarcodes();
-  const { t } = useTranslation();
-  
-  if (selectedBarcodes.length === 0) return null;
-  
-  return (
-    <Button
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        printSelectedBarcodes();
-      }}
-      className="mb-4"
-      size="sm"
-    >
-      <Printer className="h-4 w-4 mr-2" />
-      {t('inventory.stock.printSelectedBarcodes', `Print ${selectedBarcodes.length} Selected Barcodes`)}
-    </Button>
-  );
-};
-
-// Create a BarcodeCheckbox component
-const BarcodeCheckbox = ({ stock }: { stock: StockWithInspector }) => {
-  const { selectedBarcodes, setSelectedBarcodes } = useSelectedBarcodes();
-  const isSelected = selectedBarcodes.includes(stock.id);
-  
-  return (
-    <Checkbox
-      checked={isSelected}
-      onCheckedChange={(checked) => {
-        if (checked) {
-          setSelectedBarcodes((prev) => [...prev, stock.id]);
-        } else {
-          setSelectedBarcodes((prev) => prev.filter(id => id !== stock.id));
-        }
-      }}
-      onClick={(e) => e.stopPropagation()}
-      className="mr-2"
-    />
-  );
 }; 
