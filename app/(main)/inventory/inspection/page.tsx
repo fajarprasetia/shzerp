@@ -138,9 +138,16 @@ export default function InspectionPage() {
   const handleScanBarcode = async () => {
     setIsScanning(true);
     try {
-      // Use the improved Code 128 scanner instead of the generic scanner
+      // Use the improved Code 128 scanner with mobile-optimized settings
       const result = await scanBarcode128({
-        successThreshold: 2 // Lower threshold for faster scanning
+        successThreshold: 2, // Lower threshold for faster scanning
+        frequency: 15,      // Increased scanning frequency
+        locator: {
+          patchSize: "medium",
+          halfSample: true,
+        },
+        // Shorter timeout for better user experience
+        timeout: 30000
       });
       
       if (result.success && result.data) {
@@ -173,11 +180,22 @@ export default function InspectionPage() {
           toast.error(t('inventory.inspection.noMatchingItem', 'No matching uninspected item found for this barcode'));
         }
       } else if (result.error) {
-        toast.error(result.error);
+        // Provide more user-friendly error messages
+        let errorMessage = result.error;
+        
+        if (result.error.includes('cancelled')) {
+          errorMessage = t('inventory.inspection.scanCancelled', 'Scanning was cancelled');
+        } else if (result.error.includes('timed out')) {
+          errorMessage = t('inventory.inspection.scanTimeout', 'Scanning timed out. Try holding the camera more steady or adjusting lighting conditions.');
+        } else if (result.error.includes('permissions')) {
+          errorMessage = t('inventory.inspection.cameraPermissionDenied', 'Camera access was denied. Please allow camera permissions to scan barcodes.');
+        }
+        
+        toast.error(errorMessage);
       }
     } catch (error) {
       console.error("Error scanning barcode:", error);
-      toast.error(t('inventory.inspection.scanError', 'Failed to scan barcode. Please try again.'));
+      toast.error(t('inventory.inspection.scanError', 'Failed to scan barcode. Please try again or enter manually.'));
     } finally {
       setIsScanning(false);
     }

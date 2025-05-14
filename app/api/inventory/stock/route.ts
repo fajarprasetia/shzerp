@@ -1,8 +1,40 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Get query parameters
+    const { searchParams } = new URL(request.url);
+    const ids = searchParams.get("ids");
+
+    // If ids parameter exists, fetch only those stocks
+    if (ids) {
+      const idArray = ids.split(',');
+      const stocks = await prisma.stock.findMany({
+        where: {
+          id: {
+            in: idArray
+          }
+        },
+        include: {
+          inspectedBy: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+
+      // Map inspectedBy to inspector for frontend compatibility
+      const mappedStocks = stocks.map(stock => ({
+        ...stock,
+        inspector: stock.inspectedBy
+      }));
+
+      return NextResponse.json(mappedStocks);
+    }
+
+    // If no ids parameter, fetch all stocks (original behavior)
     const stocks = await prisma.stock.findMany({
       include: {
         inspectedBy: {

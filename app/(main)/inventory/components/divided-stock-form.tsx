@@ -129,8 +129,27 @@ export function DividedStockForm({ mode, onSuccess, onCancel }: DividedStockForm
   const handleScan = async () => {
     try {
       setIsScanning(true);
-      // Use the new Code 128 scanner instead
-      const result = await scanBarcode128();
+      
+      // Display a helpful message before starting the scanner
+      toast({
+        title: "Starting scanner",
+        description: "Position the barcode within the scanning box. Keep the camera steady."
+      });
+      
+      // Configure the scanner with mobile-friendly options
+      const result = await scanBarcode128({
+        // Lower the success threshold for mobile devices
+        successThreshold: 2,
+        // Increase scanning frequency for more attempts per second
+        frequency: 15,
+        // Configure locator for better mobile performance
+        locator: {
+          patchSize: "medium",
+          halfSample: true,
+        },
+        // Timeout after 30 seconds (shorter than default 60s)
+        timeout: 30000,
+      });
       
       if (result.success && result.data) {
         if (mode === "new") {
@@ -184,11 +203,22 @@ export function DividedStockForm({ mode, onSuccess, onCancel }: DividedStockForm
           toast.success("Barcode scanned successfully");
         }
       } else if (result.error) {
-        toast.error(result.error);
+        // Provide more user-friendly error messages
+        let errorMessage = result.error;
+        
+        if (result.error.includes('cancelled')) {
+          errorMessage = "Scanning was cancelled";
+        } else if (result.error.includes('timed out')) {
+          errorMessage = "Scanning timed out. Try holding the camera more steady or adjusting lighting conditions.";
+        } else if (result.error.includes('permissions')) {
+          errorMessage = "Camera access was denied. Please allow camera permissions to scan barcodes.";
+        }
+        
+        toast.error(errorMessage);
       }
     } catch (error) {
       console.error("Error scanning barcode:", error);
-      toast.error("Failed to scan barcode. Please try again.");
+      toast.error("Failed to scan barcode. Please try again or enter manually.");
     } finally {
       setIsScanning(false);
     }

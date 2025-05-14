@@ -567,14 +567,14 @@ export async function scanBarcode128(options?: Code128ScanOptions): Promise<Scan
       scannerContainer.style.overflow = 'hidden';
       scannerContainer.style.borderRadius = '8px';
       
-      // Create scanning guide overlay
+      // Create scanning guide overlay - Make it taller for better phone camera recognition
       const overlay = document.createElement('div');
       overlay.style.position = 'absolute';
       overlay.style.top = '50%';
       overlay.style.left = '50%';
       overlay.style.transform = 'translate(-50%, -50%)';
       overlay.style.width = '80%';
-      overlay.style.height = '100px';
+      overlay.style.height = '150px'; // Increased from 100px to 150px
       overlay.style.border = '2px dashed #fff';
       overlay.style.borderRadius = '4px';
       overlay.style.boxSizing = 'border-box';
@@ -694,48 +694,68 @@ export async function scanBarcode128(options?: Code128ScanOptions): Promise<Scan
       // Track detections for confidence threshold
       let detectionCount = 0;
       const detectionResults: Record<string, number> = {};
-      const successThreshold = options?.successThreshold || 3;
+      const successThreshold = options?.successThreshold || 2; // Decreased from 3 to 2 for better mobile scanning
       
-      // Initialize Quagga
+      // Initialize Quagga with improved mobile settings
       Quagga.init({
         inputStream: {
           name: "Live",
           type: "LiveStream",
           target: scannerContainer,
           constraints: {
-            width: { min: 640 },
-            height: { min: 480 },
-            facingMode: "environment",
-            aspectRatio: { min: 1, max: 2 }
+            width: { min: 450 }, // Decreased from 640 for better mobile performance
+            height: { min: 300 }, // Decreased from 480 for better mobile performance
+            facingMode: "environment", // Always use back camera for barcode scanning
+            // Remove aspectRatio constraint which can cause issues on some mobile devices
           },
-          area: { // Only read codes in central area
-            top: "30%",
-            right: "10%",
-            left: "10%",
-            bottom: "30%",
+          area: { // Expand scanning area for mobile devices
+            top: "25%", // Changed from 30%
+            right: "5%",  // Changed from 10%
+            left: "5%",   // Changed from 10%
+            bottom: "25%" // Changed from 30%
           },
         },
         locator: {
-          patchSize: options?.locator?.patchSize || "medium",
-          halfSample: options?.locator?.halfSample !== false
+          patchSize: "medium", // Consistent medium patch size
+          halfSample: true, // Keep half sample enabled for performance
         },
-        numOfWorkers: options?.numOfWorkers || 4,
-        frequency: options?.frequency || 10,
+        numOfWorkers: 2, // Reduced from 4 for better mobile performance
+        frequency: 15,   // Increased from 10 for more frequent scans
         decoder: {
           readers: ["code_128_reader"],
           multiple: false,
+          debug: {
+            drawBoundingBox: true,
+            showFrequency: true,
+            drawScanline: true,
+            showPattern: true
+          }
         },
         locate: true
       }, function(err) {
         if (err) {
           console.error("Failed to initialize Quagga:", err);
           feedbackText.textContent = "Failed to start scanner. Please check camera permissions.";
+          
+          // Add fallback for manual entry after error
+          setTimeout(() => {
+            const manualEntry = confirm("Scanner initialization failed. Would you like to enter the code manually?");
+            if (manualEntry) {
+              manualInputButton.click();
+            } else {
+              safeResolve({
+                success: false,
+                data: "",
+                error: 'Scanner initialization failed'
+              });
+            }
+          }, 2000);
           return;
         }
         
         // Start Quagga
         Quagga.start();
-        feedbackText.textContent = "Scanner ready. Searching for Code 128...";
+        feedbackText.textContent = "Scanner ready. Align barcode within the box...";
         
         // Draw scan line for visual feedback
         const canvas = scannerContainer.querySelector('canvas.drawingBuffer');
@@ -748,7 +768,7 @@ export async function scanBarcode128(options?: Code128ScanOptions): Promise<Scan
         }
       });
       
-      // Handle successful detection
+      // Handle successful detection with lower confidence threshold for mobile
       Quagga.onDetected((result) => {
         const code = result.codeResult.code;
         
@@ -768,8 +788,11 @@ export async function scanBarcode128(options?: Code128ScanOptions): Promise<Scan
           feedbackText.textContent = `Detected: ${code} (Confidence: ${confidence})`;
         }
         
-        // Check if we have enough consistent detections
-        if (detectionResults[code] >= successThreshold) {
+        // Accept lower confidence threshold for mobile devices
+        const minConfidence = 0.55; // Reduced from default 0.75
+        
+        // Check if we have enough consistent detections with sufficient confidence
+        if ((detectionResults[code] >= successThreshold) && (confidence > minConfidence)) {
           // Play success beep
           try {
             const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU" + Array(100).join("A"));

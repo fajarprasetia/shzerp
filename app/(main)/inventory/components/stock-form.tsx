@@ -109,7 +109,27 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
   const handleScan = async () => {
     try {
       setIsScanning(true);
-      const result = await scanBarcode128();
+      
+      // Display a helpful message before starting the scanner
+      toast({
+        title: t('inventory.stock.startingScan', 'Starting scanner'),
+        description: t('inventory.stock.scanInstructions', 'Position the barcode within the scanning box. Keep the camera steady.'),
+      });
+      
+      // Configure the scanner with mobile-friendly options
+      const result = await scanBarcode128({
+        // Lower the success threshold for mobile devices
+        successThreshold: 2,
+        // Increase scanning frequency
+        frequency: 15,
+        // Configure locator for better mobile performance
+        locator: {
+          patchSize: "medium",
+          halfSample: true,
+        },
+        // Timeout after 30 seconds (shorter than default 60s)
+        timeout: 30000,
+      });
       
       if (result.success && result.data) {
         const scannedData: string = result.data!;
@@ -122,16 +142,28 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
           description: t('inventory.stock.barcodeScanned', 'Barcode scanned successfully!'),
         });
       } else if (result.error) {
+        // More descriptive error handling
+        let errorMessage = result.error;
+        
+        // Provide more user-friendly error messages
+        if (result.error.includes('cancelled')) {
+          errorMessage = t('inventory.stock.scanCancelled', 'Scanning was cancelled');
+        } else if (result.error.includes('timed out')) {
+          errorMessage = t('inventory.stock.scanTimeout', 'Scanning timed out. Try holding the camera more steady or adjusting lighting conditions.');
+        } else if (result.error.includes('permissions')) {
+          errorMessage = t('inventory.stock.cameraPermissionDenied', 'Camera access was denied. Please allow camera permissions to scan barcodes.');
+        }
+        
         toast({
           title: t('common.error', 'Error'),
-          description: result.error,
+          description: errorMessage,
           variant: "destructive"
         });
       }
     } catch (error) {
       toast({
         title: t('common.error', 'Error'),
-        description: t('inventory.stock.scanError', 'Failed to scan barcode. Please try again.'),
+        description: t('inventory.stock.scanError', 'Failed to scan barcode. Please try again or enter manually.'),
         variant: "destructive"
       });
     } finally {

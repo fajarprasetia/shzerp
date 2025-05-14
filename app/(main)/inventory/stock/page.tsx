@@ -30,6 +30,8 @@ import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "react-i18next";
 // Import pre-initialized i18n instance
 import i18nInstance from "@/app/i18n";
+// Import the context provider and batch print button
+import { SelectedBarcodesProvider, BatchPrintButton } from "./columns";
 
 export default withPermission(StockPage, "inventory", "read");
 
@@ -385,99 +387,107 @@ function StockPage() {
   }
 
   return (
-    <div className="container mx-auto py-10">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">{t('inventory.stock.title', 'Stock Management')}</h1>
-        <div className="flex items-center gap-2">
-          {selectedRows.length > 0 && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePrintLabel(selectedRows)}
-              >
-                <Printer className="h-4 w-4 mr-2" />
-                {t('inventory.stock.printLabels', `Print ${selectedRows.length} Labels`)}
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => handleDelete(selectedRows)}
-                disabled={isDeleting}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {t('inventory.stock.deleteSelected', 'Delete Selected')}
-              </Button>
-            </>
-          )}
-          <Button onClick={() => setShowForm(true)}>{t('inventory.stock.addNew', 'Add New Stock')}</Button>
+    <SelectedBarcodesProvider>
+      <div className="container mx-auto py-10">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-2xl font-bold">{t('inventory.stock.title', 'Stock Management')}</h1>
+          <div className="flex items-center gap-2">
+            {selectedRows.length > 0 && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePrintLabel(selectedRows)}
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  {t('inventory.stock.printLabels', `Print ${selectedRows.length} Labels`)}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDelete(selectedRows)}
+                  disabled={isDeleting}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {t('inventory.stock.deleteSelected', 'Delete Selected')}
+                </Button>
+              </>
+            )}
+            <Button onClick={() => setShowForm(true)}>{t('inventory.stock.addNew', 'Add New Stock')}</Button>
+          </div>
         </div>
-      </div>
 
-      {showForm ? (
-        <StockForm 
-          // @ts-ignore - Ignoring type errors due to compatibility issues between StockWithInspector and Stock
-          initialData={selectedStock} 
-          onSubmit={handleSubmit} 
-          onCancel={handleCancel} 
-        />
-      ) : (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="available">{t('inventory.stock.availableStock', 'Available Stock')}</TabsTrigger>
-            <TabsTrigger value="stockout">{t('inventory.stock.stockOut', 'Stock Out')}</TabsTrigger>
-            <TabsTrigger value="sold">{t('inventory.stock.soldStock', 'Sold Stock')}</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="available" className="w-full">
-            <DataTable 
-              columns={columns}
-              data={filteredData || []} 
-              enableSorting={true}
-              searchableColumns={[
-                { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
-                { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
-                { id: "type", displayName: t('inventory.stock.type', 'Type') },
-                { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
-                { id: "width", displayName: t('inventory.stock.width', 'Width') },
-                { id: "length", displayName: t('inventory.stock.length', 'Length') }
-              ]}
-            />
-          </TabsContent>
-          
-          <TabsContent value="stockout" className="w-full">
-            <DataTable 
-              columns={columns}
-              data={filteredData || []} 
-              enableSorting={true}
-              searchableColumns={[
-                { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
-                { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
-                { id: "type", displayName: t('inventory.stock.type', 'Type') },
-                { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
-                { id: "width", displayName: t('inventory.stock.width', 'Width') },
-                { id: "length", displayName: t('inventory.stock.length', 'Length') }
-              ]}
-            />
-          </TabsContent>
-          
-          <TabsContent value="sold" className="w-full">
-            <DataTable 
-              columns={columns}
-              data={filteredData || []} 
-              enableSorting={true}
-              searchableColumns={[
-                { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
-                { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
-                { id: "type", displayName: t('inventory.stock.type', 'Type') },
-                { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
-                { id: "width", displayName: t('inventory.stock.width', 'Width') },
-                { id: "length", displayName: t('inventory.stock.length', 'Length') }
-              ]}
-            />
-          </TabsContent>
-        </Tabs>
-      )}
-    </div>
+        {showForm ? (
+          <StockForm 
+            // @ts-ignore - Ignoring type errors due to compatibility issues between StockWithInspector and Stock
+            initialData={selectedStock} 
+            onSubmit={handleSubmit} 
+            onCancel={handleCancel} 
+          />
+        ) : (
+          <>
+            {/* Add the BatchPrintButton here */}
+            <div className="mb-4">
+              <BatchPrintButton />
+            </div>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-3 mb-6">
+                <TabsTrigger value="available">{t('inventory.stock.availableStock', 'Available Stock')}</TabsTrigger>
+                <TabsTrigger value="stockout">{t('inventory.stock.stockOut', 'Stock Out')}</TabsTrigger>
+                <TabsTrigger value="sold">{t('inventory.stock.soldStock', 'Sold Stock')}</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="available" className="w-full">
+                <DataTable 
+                  columns={columns}
+                  data={filteredData || []} 
+                  enableSorting={true}
+                  searchableColumns={[
+                    { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
+                    { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
+                    { id: "type", displayName: t('inventory.stock.type', 'Type') },
+                    { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
+                    { id: "width", displayName: t('inventory.stock.width', 'Width') },
+                    { id: "length", displayName: t('inventory.stock.length', 'Length') }
+                  ]}
+                />
+              </TabsContent>
+              
+              <TabsContent value="stockout" className="w-full">
+                <DataTable 
+                  columns={columns}
+                  data={filteredData || []} 
+                  enableSorting={true}
+                  searchableColumns={[
+                    { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
+                    { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
+                    { id: "type", displayName: t('inventory.stock.type', 'Type') },
+                    { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
+                    { id: "width", displayName: t('inventory.stock.width', 'Width') },
+                    { id: "length", displayName: t('inventory.stock.length', 'Length') }
+                  ]}
+                />
+              </TabsContent>
+              
+              <TabsContent value="sold" className="w-full">
+                <DataTable 
+                  columns={columns}
+                  data={filteredData || []} 
+                  enableSorting={true}
+                  searchableColumns={[
+                    { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
+                    { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
+                    { id: "type", displayName: t('inventory.stock.type', 'Type') },
+                    { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
+                    { id: "width", displayName: t('inventory.stock.width', 'Width') },
+                    { id: "length", displayName: t('inventory.stock.length', 'Length') }
+                  ]}
+                />
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
+      </div>
+    </SelectedBarcodesProvider>
   );
 } 

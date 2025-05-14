@@ -475,10 +475,22 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
     setLastScanError(null);
 
     try {
-      // Use scanBarcode128 for more reliable Code 128 scanning
+      // Display a helpful notification before scanning starts
+      toast({
+        title: "Starting Scanner",
+        description: "Position the barcode within the scanning box and hold the camera steady",
+      });
+      
+      // Use scanBarcode128 with mobile-optimized settings
       const result = await scanBarcode128({
-        timeout: 60000, // 60 seconds maximum scan time
-        successThreshold: 2 // Lower threshold for faster scanning
+        // Mobile-friendly configuration
+        successThreshold: 2,          // Lower threshold for faster scanning
+        frequency: 15,                // Increased scanning frequency
+        locator: {
+          patchSize: "medium",        // Medium patch size for better balance
+          halfSample: true,           // Enable half sample for performance
+        },
+        timeout: 30000                // 30 seconds maximum scan time (reduced from 60s)
       });
       
       console.log("Scan result:", result);
@@ -492,20 +504,32 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
         await processScannedBarcode(result.data);
       } else if (result.error) {
         console.error("Scan error:", result.error);
-        setLastScanError(result.error);
+        
+        // Provide more user-friendly error messages
+        let errorMessage = result.error;
+        
+        if (result.error.includes('cancelled')) {
+          errorMessage = "Scanning was cancelled";
+        } else if (result.error.includes('timed out')) {
+          errorMessage = "Scanning timed out. Try holding the camera more steady or adjusting lighting.";
+        } else if (result.error.includes('permissions')) {
+          errorMessage = "Camera access was denied. Please allow camera permissions.";
+        }
+        
+        setLastScanError(errorMessage);
         toast({
           variant: "destructive",
           title: "Scan Error",
-          description: result.error,
+          description: errorMessage,
         });
       }
     } catch (error) {
       console.error('Error during scanning:', error);
-      setLastScanError('Scanning failed. Please try again.');
+      setLastScanError('Scanning failed. Please try again or enter manually.');
       toast({
         variant: "destructive",
         title: "Scan Error",
-        description: "Failed to scan barcode.",
+        description: "Failed to scan barcode. Please try again or enter manually.",
       });
     } finally {
       setIsScanning(false);

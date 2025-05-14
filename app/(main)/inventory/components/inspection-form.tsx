@@ -58,13 +58,41 @@ export function InspectionForm({ item, onSuccess, onCancel }: InspectionFormProp
   const handleScanBarcode = async () => {
     try {
       setIsScanning(true);
-      const result = await scanBarcode128();
+      
+      // Display a helpful message before starting the scanner
+      toast.success(t('inventory.inspection.startingScanner', 'Starting scanner. Position the barcode in the box.'));
+      
+      // Use enhanced mobile-friendly scanner configuration
+      const result = await scanBarcode128({
+        // Lower threshold for faster mobile scanning
+        successThreshold: 2,
+        // Increase frequency for more scans per second
+        frequency: 15,
+        // Optimize locator settings for mobile
+        locator: {
+          patchSize: "medium", 
+          halfSample: true,
+        },
+        // Shorter timeout for better user experience
+        timeout: 30000
+      });
       
       if (result.success && result.data) {
         setBarcodeInput(result.data);
         toast.success(t('inventory.inspection.barcodeScanned', 'Barcode scanned successfully'));
       } else if (result.error) {
-        toast.error(result.error);
+        // Provide more user-friendly error messages
+        let errorMessage = result.error;
+        
+        if (result.error.includes('cancelled')) {
+          errorMessage = t('inventory.inspection.scanCancelled', 'Scanning was cancelled');
+        } else if (result.error.includes('timed out')) {
+          errorMessage = t('inventory.inspection.scanTimeout', 'Scanning timed out. Try holding the camera more steady or adjusting lighting conditions.');
+        } else if (result.error.includes('permissions')) {
+          errorMessage = t('inventory.inspection.cameraPermissionDenied', 'Camera access was denied. Please allow camera permissions to scan barcodes.');
+        }
+        
+        toast.error(errorMessage);
       }
     } catch (error) {
       console.error("Error scanning barcode:", error);
