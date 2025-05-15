@@ -118,6 +118,32 @@ interface Order {
   paymentStatus?: string;
 }
 
+// TypeScript interface for OrderItem with proper typing
+interface OrderItemForDebug {
+  id: string;
+  type?: string;
+  product?: string;
+  price: number;
+  quantity: number;
+  tax: number;
+  gsm?: string | number;
+  width?: string | number;
+  length?: string | number;
+  weight?: string | number;
+  stock?: {
+    type?: string;
+    gsm?: number;
+    width?: number;
+    length?: number;
+  } | null;
+  divided?: {
+    type?: string;
+    gsm?: number;
+    width?: number;
+    length?: number;
+  } | null;
+}
+
 export default withPermission(InvoicesPage, "sales", "read");
 
 function InvoicesPage() {
@@ -277,6 +303,13 @@ function InvoicesPage() {
     formData.append("file", file);
     formData.append("invoiceId", uploadingInvoiceId);
 
+    console.log("Uploading payment proof:", {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      invoiceId: uploadingInvoiceId
+    });
+
     setIsUploading(true);
     try {
       const response = await fetch("/api/sales/invoices/upload-payment", {
@@ -288,8 +321,23 @@ function InvoicesPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to upload payment proof");
+        // Try to get the detailed error from the response
+        const errorData = await response.json().catch(() => null);
+        console.error("Error response from upload API:", {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        });
+        
+        throw new Error(
+          errorData && errorData.details 
+            ? `Failed to upload payment proof: ${errorData.details}`
+            : `Failed to upload payment proof (${response.status}: ${response.statusText})`
+        );
       }
+
+      const result = await response.json();
+      console.log("Upload successful:", result);
 
       toast({
         title: t('common.success', 'Success'),
@@ -360,7 +408,7 @@ function InvoicesPage() {
       console.log('Customer data:', customer);
 
       // Log each order item for debugging
-      latestInvoice.orderItems.forEach((item, index) => {
+      latestInvoice.orderItems.forEach((item: OrderItemForDebug, index: number) => {
         console.log(`Order item ${index + 1} details:`, {
           id: item.id,
           stockType: item.stock?.type,
@@ -377,7 +425,7 @@ function InvoicesPage() {
         id: latestInvoice.orderId,
         orderNo: latestInvoice.invoiceNo,
         customerId: latestInvoice.customerId,
-        orderItems: latestInvoice.orderItems.map((item: any) => ({
+        orderItems: latestInvoice.orderItems.map((item: OrderItemForDebug) => ({
           ...item,
           // Ensure type, product, gsm are present as string
           type: item.type || '-',
@@ -393,7 +441,7 @@ function InvoicesPage() {
         orderNo: orderForPDF.orderNo,
         customerId: orderForPDF.customerId,
         itemCount: orderForPDF.orderItems.length,
-        items: orderForPDF.orderItems.map(item => ({
+        items: orderForPDF.orderItems.map((item: OrderItemForDebug) => ({
           id: item.id,
           type: item.type,
           product: item.product,
@@ -454,7 +502,7 @@ function InvoicesPage() {
       return invoice.paymentImage;
     }
 
-    // Construct the URL based on how your backend serves images
+    // Change path construction to use public path
     return `/uploads/payments/${invoice.paymentImage}`;
   };
 
@@ -520,6 +568,37 @@ function InvoicesPage() {
       },
     },
     {
+      accessorKey: "paymentImage",
+      header: t('sales.invoices.proof', 'Payment Proof'),
+      cell: ({ row }) => {
+        const invoice = row.original;
+        const paymentImageUrl = getPaymentImageUrl(invoice);
+        
+        return (
+          <div className="flex items-center justify-center">
+            {paymentImageUrl ? (
+              <div 
+                className="relative group cursor-pointer"
+                onClick={() => setSelectedImage(paymentImageUrl)}
+              >
+                {/* Direct img tag for thumbnail instead of Next.js Image component */}
+                <img
+                  src={paymentImageUrl}
+                  alt="Payment Proof"
+                  className="h-10 w-10 object-cover rounded border border-muted"
+                />
+                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 rounded flex items-center justify-center transition-opacity">
+                  <span className="text-white text-xs">View</span>
+                </div>
+              </div>
+            ) : (
+              <span className="text-muted-foreground text-sm">No proof</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
       id: "actions",
       header: t('common.actions', 'Actions'),
       cell: ({ row }) => {
@@ -534,30 +613,21 @@ function InvoicesPage() {
               <Printer className="h-4 w-4 mr-2" />
               {t('sales.invoices.downloadPDF', 'Download PDF')}
             </Button>
-            {invoice.paymentStatus !== "PAID" && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleUploadClick(invoice.id)}
-                disabled={isUploading && uploadingInvoiceId === invoice.id}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {isUploading && uploadingInvoiceId === invoice.id
-                  ? t('common.loading', 'Uploading...')
-                  : invoice.paymentImage
-                  ? t('sales.invoices.replaceProof', 'Replace Proof')
-                  : t('sales.invoices.uploadProof', 'Upload Proof')}
-              </Button>
-            )}
-            {invoice.paymentImage && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedImage(getPaymentImageUrl(invoice) || null)}
-              >
-                {t('common.view', 'View')}
-              </Button>
-            )}
+            
+            {/* Always show upload button regardless of payment status */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleUploadClick(invoice.id)}
+              disabled={isUploading && uploadingInvoiceId === invoice.id}
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              {isUploading && uploadingInvoiceId === invoice.id
+                ? t('common.loading', 'Uploading...')
+                : invoice.paymentImage
+                ? t('sales.invoices.replaceProof', 'Replace Proof')
+                : t('sales.invoices.uploadProof', 'Upload Proof')}
+            </Button>
           </div>
         );
       },
@@ -645,11 +715,10 @@ function InvoicesPage() {
           </DialogHeader>
           {selectedImage && (
             <div className="w-full h-auto max-h-[60vh] overflow-auto">
-              <Image
+              {/* Using direct img tag instead of Next.js Image component to avoid image optimization issues */}
+              <img
                 src={selectedImage}
                 alt="Payment Proof"
-                width={800}
-                height={800}
                 className="w-full h-auto object-contain"
               />
             </div>

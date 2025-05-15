@@ -37,6 +37,7 @@
     "@react-pdf/renderer": "^4.1.6",
     "@tanstack/react-table": "^8.20.6",
     "@types/jsonwebtoken": "^9.0.9",
+    "@types/uuid": "^10.0.0",
     "@zxing/library": "^0.21.3",
     "assert": "^2.1.0",
     "axios": "^1.8.3",
@@ -90,6 +91,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "url": "^0.11.4",
+    "uuid": "^11.1.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

@@ -622,16 +622,6 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
         const currentItem = order.orderItems[matchedItemIndex];
         const currentScannedCount = currentItem.scannedCount || 0;
         
-        if (currentScannedCount >= currentItem.quantity) {
-          setLastScanError(`Already scanned all ${currentItem.quantity} items of this type`);
-          toast({
-            variant: "default",
-            title: "Maximum Quantity Reached",
-            description: `Already scanned all ${currentItem.quantity} items of this type`,
-          });
-          return;
-        }
-        
         // Check if we've already scanned this specific barcode
         const scannedBarcodes = currentItem.scannedBarcodes || [];
         if (scannedBarcodes.includes(barcodeValue)) {
@@ -640,6 +630,30 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
             variant: "default",
             title: "Duplicate Scan",
             description: "This specific item has already been scanned",
+          });
+          return;
+        }
+        
+        // If item type is "Jumbo Roll" or contains "Jumbo", check by barcode instead of quantity
+        // This allows scanning multiple unique jumbo rolls when order quantity > 1
+        if (currentItem.type.toLowerCase().includes("jumbo") && currentScannedCount >= currentItem.quantity) {
+          // For Jumbo Rolls, only show the error if we've already scanned this exact barcode
+          if (scannedBarcodes.includes(barcodeValue)) {
+            setLastScanError(`This Jumbo Roll has already been scanned`);
+            toast({
+              variant: "default",
+              title: "Duplicate Scan",
+              description: `This Jumbo Roll has already been scanned`,
+            });
+            return;
+          }
+        } else if (currentScannedCount >= currentItem.quantity) {
+          // For other item types, enforce the quantity limit strictly
+          setLastScanError(`Already scanned all ${currentItem.quantity} items of this type`);
+          toast({
+            variant: "default",
+            title: "Maximum Quantity Reached",
+            description: `Already scanned all ${currentItem.quantity} items of this type`,
           });
           return;
         }

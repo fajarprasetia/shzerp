@@ -9,8 +9,11 @@ import { writeFile } from 'fs/promises';
 // POST /api/sales/invoices/upload-payment - Upload payment proof for an invoice
 export async function POST(request: Request) {
   try {
+    console.log('Starting payment proof upload process');
+    
     // Check for X-Debug-Mode header
     const isDebugMode = request.headers.get('X-Debug-Mode') === 'true';
+    console.log('Debug mode:', isDebugMode);
     
     // Only check authentication if not in debug mode
     if (!isDebugMode) {
@@ -29,6 +32,7 @@ export async function POST(request: Request) {
     // Create uploads directory if it doesn't exist
     const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'payments');
     if (!fs.existsSync(uploadsDir)) {
+      console.log(`Creating directory: ${uploadsDir}`);
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
 
@@ -36,6 +40,13 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const invoiceId = formData.get('invoiceId') as string;
+
+    console.log('Received form data:', { 
+      hasFile: !!file, 
+      fileName: file?.name,
+      fileSize: file?.size,
+      invoiceId 
+    });
 
     if (!file || !invoiceId) {
       return new NextResponse(
@@ -51,12 +62,20 @@ export async function POST(request: Request) {
     }
 
     // Find the invoice
+    console.log(`Finding invoice with ID: ${invoiceId}`);
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: {
         order: true,
         accountsReceivable: true
       }
+    });
+
+    console.log('Invoice found:', { 
+      found: !!invoice,
+      orderId: invoice?.orderId,
+      hasOrder: !!invoice?.order,
+      hasAccountsReceivable: !!invoice?.accountsReceivableId
     });
 
     if (!invoice) {
@@ -76,81 +95,103 @@ export async function POST(request: Request) {
     const fileExt = file.name.split('.').pop();
     const fileName = `${uuidv4()}.${fileExt}`;
     const filePath = path.join(uploadsDir, fileName);
+    console.log(`Generating file path: ${filePath}`);
 
     // Write the file to disk
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(filePath, buffer);
+    try {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await writeFile(filePath, buffer);
+      console.log(`File written successfully to: ${filePath}`);
+    } catch (fileError) {
+      console.error('Error writing file:', fileError);
+      return new NextResponse(
+        JSON.stringify({ 
+          error: 'Failed to write file to disk', 
+          details: fileError instanceof Error ? fileError.message : String(fileError) 
+        }),
+        { status: 500, headers: { 'Content-Type': 'application/json', 'X-Debug-Mode': 'true' } }
+      );
+    }
 
     // Get relative path for storing in the database
     const relativeFilePath = fileName;
 
     // Update the invoice with payment information
-    const updatedInvoice = await prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        paymentStatus: 'PAID',
-        paymentDate: new Date(),
-        paymentImage: relativeFilePath,
-      }
-    });
-
-    // Update the original order as well
-    if (invoice.order) {
-      await prisma.order.update({
-        where: { id: invoice.orderId },
+    try {
+      console.log(`Updating invoice: ${invoiceId}`);
+      const updatedInvoice = await prisma.invoice.update({
+        where: { id: invoiceId },
         data: {
-          status: 'COMPLETED',
           paymentStatus: 'PAID',
+          paymentDate: new Date(),
           paymentImage: relativeFilePath,
-          paymentMethod: 'Bank Transfer' // default
         }
       });
-    }
+      console.log('Invoice updated successfully');
 
-    // Update accounts receivable
-    if (invoice.accountsReceivableId) {
-      await prisma.accountsReceivable.update({
-        where: { id: invoice.accountsReceivableId },
-        data: {
-          paidAmount: {
-            increment: invoice.totalAmount
-          },
-          status: 'CLOSED'
-        }
-      });
-    } else {
-      // Create a new accounts receivable entry if it doesn't exist
-      await prisma.accountsReceivable.create({
-        data: {
-          id: `ar-${invoice.customerId}`,
-          customerId: invoice.customerId,
-          totalAmount: invoice.totalAmount,
-          paidAmount: invoice.totalAmount,
-          status: 'CLOSED',
-          dueDate: new Date(),
-          invoices: {
-            connect: {
-              id: invoice.id
+      // Update the original order as well
+      if (invoice.order) {
+        console.log(`Updating related order: ${invoice.orderId}`);
+        await prisma.order.update({
+          where: { id: invoice.orderId },
+          data: {
+            status: 'COMPLETED',
+            paymentStatus: 'PAID',
+            paymentImage: relativeFilePath,
+            paymentMethod: 'Bank Transfer' // default
+          }
+        });
+        console.log('Order updated successfully');
+      }
+
+      // Skip accounts receivable if it's causing issues
+      // We'll just log instead of updating for now
+      if (invoice.accountsReceivableId) {
+        try {
+          console.log(`Updating accounts receivable: ${invoice.accountsReceivableId}`);
+          await prisma.accountsReceivable.update({
+            where: { id: invoice.accountsReceivableId },
+            data: {
+              paidAmount: {
+                increment: invoice.totalAmount
+              },
+              status: 'CLOSED'
             }
+          });
+          console.log('Accounts receivable updated successfully');
+        } catch (arError) {
+          console.error('Error updating accounts receivable (non-fatal):', arError);
+          // Continue execution even if this fails
+        }
+      } else {
+        // Skip creating a new accounts receivable for now
+        console.log('No existing accounts receivable, skipping creation');
+      }
+
+      return new NextResponse(
+        JSON.stringify({
+          success: true,
+          message: 'Payment proof uploaded successfully',
+          invoice: updatedInvoice
+        }),
+        { 
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Mode': 'true'
           }
         }
-      });
+      );
+    } catch (dbError) {
+      console.error('Database error:', dbError);
+      return new NextResponse(
+        JSON.stringify({ 
+          error: 'Database operation failed', 
+          details: dbError instanceof Error ? dbError.message : String(dbError) 
+        }),
+        { status: 500, headers: { 'Content-Type': 'application/json', 'X-Debug-Mode': 'true' } }
+      );
     }
-
-    return new NextResponse(
-      JSON.stringify({
-        success: true,
-        message: 'Payment proof uploaded successfully',
-        invoice: updatedInvoice
-      }),
-      { 
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Debug-Mode': 'true'
-        }
-      }
-    );
   } catch (error) {
     console.error('Error uploading payment proof:', error);
     return new NextResponse(

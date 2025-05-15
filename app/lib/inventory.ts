@@ -294,7 +294,7 @@ export async function scanBarcode(useBackCamera: boolean = true, options?: ScanO
         
         // Play success beep
         try {
-          const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU" + Array(100).join("A"));
+          const beep = new Audio("/beep.mp3");
           beep.volume = 0.2;
           beep.play().catch(e => console.log("Couldn't play success sound"));
         } catch (e) {
@@ -709,18 +709,18 @@ export async function scanBarcode128(options?: Code128ScanOptions): Promise<Scan
             // Remove aspectRatio constraint which can cause issues on some mobile devices
           },
           area: { // Expand scanning area for mobile devices
-            top: "25%", // Changed from 30%
-            right: "5%",  // Changed from 10%
-            left: "5%",   // Changed from 10%
-            bottom: "25%" // Changed from 30%
+            top: "20%", // Changed from 25% to capture more of the barcode
+            right: "5%",  
+            left: "5%",   
+            bottom: "20%" // Changed from 25% to capture more of the barcode
           },
         },
         locator: {
-          patchSize: "medium", // Consistent medium patch size
-          halfSample: true, // Keep half sample enabled for performance
+          patchSize: options?.locator?.patchSize || "medium", // Use option or default to medium
+          halfSample: options?.locator?.halfSample !== undefined ? options.locator.halfSample : true,
         },
-        numOfWorkers: 2, // Reduced from 4 for better mobile performance
-        frequency: 15,   // Increased from 10 for more frequent scans
+        numOfWorkers: options?.numOfWorkers || 2, // Use option or default to 2
+        frequency: options?.frequency || 15,   // Use option or default to 15
         decoder: {
           readers: ["code_128_reader"],
           multiple: false,
@@ -788,14 +788,24 @@ export async function scanBarcode128(options?: Code128ScanOptions): Promise<Scan
           feedbackText.textContent = `Detected: ${code} (Confidence: ${confidence})`;
         }
         
-        // Accept lower confidence threshold for mobile devices
-        const minConfidence = 0.55; // Reduced from default 0.75
+        // Accept lower confidence threshold for mobile devices - including zero confidence for certain cases
+        const minConfidence = 0.2; // Significantly reduced threshold (was 0.55)
         
-        // Check if we have enough consistent detections with sufficient confidence
-        if ((detectionResults[code] >= successThreshold) && (confidence > minConfidence)) {
+        // Special handling for repeated consistent detections even with very low confidence
+        const hasHighRepetitionCount = detectionResults[code] >= 4; // If same code detected 4+ times
+        
+        // Check for sufficient detections
+        const validDetection = (
+          // Either standard criteria: enough detections with sufficient confidence
+          ((detectionResults[code] >= successThreshold) && (confidence > minConfidence)) ||
+          // OR exceptional case: very high repetition count (4+) even with near-zero confidence
+          (hasHighRepetitionCount)
+        );
+        
+        if (validDetection) {
           // Play success beep
           try {
-            const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU" + Array(100).join("A"));
+            const beep = new Audio("/beep.mp3");
             beep.volume = 0.2;
             beep.play().catch(e => console.log("Couldn't play success sound"));
           } catch (e) {

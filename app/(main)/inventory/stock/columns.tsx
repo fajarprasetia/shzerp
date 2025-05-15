@@ -406,6 +406,9 @@ export const getColumns = (
             <div className="flex items-center">
               <BarcodeDisplay barcodeId={barcodeId} />
             </div>
+            <div className="text-center font-mono text-xs border border-dashed border-gray-200 dark:border-gray-700 py-1 px-2 rounded">
+              {barcodeId}
+            </div>
             <Button 
               variant="outline" 
               size="sm"
