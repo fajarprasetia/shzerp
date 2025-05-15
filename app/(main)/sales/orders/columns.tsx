@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 // Simplify to any function that takes a key and returns a string
 type TFunction = any;
 
-interface OrderWithRelations {
+export interface OrderWithRelations {
   id: string;
   orderNo: string;
   customerId: string;

@@ -15,16 +15,13 @@ import i18nInstance from "@/app/i18n";
 import { I18nProvider } from "./components/i18n-provider";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
+import { Line, XAxis, YAxis, Tooltip, Pie, Cell } from "recharts";
+import { OrderWithRelations } from "../sales/orders/columns";
 
-const LineChart = dynamic(() => import("recharts").then(m => m.LineChart), { ssr: false });
-const Line = dynamic(() => import("recharts").then(m => m.Line), { ssr: false });
-const XAxis = dynamic(() => import("recharts").then(m => m.XAxis), { ssr: false });
-const YAxis = dynamic(() => import("recharts").then(m => m.YAxis), { ssr: false });
-const Tooltip = dynamic(() => import("recharts").then(m => m.Tooltip), { ssr: false });
+// Only dynamically import chart containers
 const ResponsiveContainer = dynamic(() => import("recharts").then(m => m.ResponsiveContainer), { ssr: false });
+const LineChart = dynamic(() => import("recharts").then(m => m.LineChart), { ssr: false });
 const PieChart = dynamic(() => import("recharts").then(m => m.PieChart), { ssr: false });
-const Pie = dynamic(() => import("recharts").then(m => m.Pie), { ssr: false });
-const Cell = dynamic(() => import("recharts").then(m => m.Cell), { ssr: false });
 
 function DashboardPage() {
   // Use the pre-initialized i18n instance
@@ -38,7 +35,7 @@ function DashboardPage() {
     isLoading, 
     isError 
   } = useDashboardData();
-  const [recentOrders, setRecentOrders] = useState([]);
+  const [recentOrders, setRecentOrders] = useState<OrderWithRelations[]>([]);
 
   // Only show error toast after mounting to avoid hydration issues
   useEffect(() => {
@@ -159,7 +156,10 @@ function DashboardPage() {
           
           {/* Recent Transactions */}
           <RecentTransactions
-            transactions={recentOrders}
+            transactions={recentOrders.map(order => ({
+              ...order,
+              createdAt: typeof order.createdAt === "string" ? order.createdAt : order.createdAt.toISOString(),
+            }))}
             isLoading={isLoading}
           />
         </TabsContent>
