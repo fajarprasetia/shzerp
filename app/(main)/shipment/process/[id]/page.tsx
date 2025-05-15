@@ -634,10 +634,19 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
           return;
         }
         
-        // If item type is "Jumbo Roll" or contains "Jumbo", check by barcode instead of quantity
-        // This allows scanning multiple unique jumbo rolls when order quantity > 1
-        if (currentItem.type.toLowerCase().includes("jumbo") && currentScannedCount >= currentItem.quantity) {
-          // For Jumbo Rolls, only show the error if we've already scanned this exact barcode
+        // Enhanced Jumbo Roll handling - allow scanning multiple rolls with different weights
+        // Check if the item is a Jumbo Roll by type or product name
+        const isJumboRoll = 
+          (currentItem.type?.toLowerCase().includes("jumbo") || 
+           currentItem.product?.toLowerCase().includes("jumbo") ||
+           currentItem.type?.toLowerCase().includes("roll"));
+        
+        if (isJumboRoll) {
+          // For Jumbo Rolls, we don't strictly enforce quantity limits
+          // We allow scanning different barcodes even past the quantity limit
+          console.log("Jumbo Roll detected, allowing multiple scans with different barcodes");
+          
+          // Only show error if attempting to scan the same barcode twice
           if (scannedBarcodes.includes(barcodeValue)) {
             setLastScanError(`This Jumbo Roll has already been scanned`);
             toast({
@@ -647,6 +656,13 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
             });
             return;
           }
+          
+          // For Jumbo Rolls, display a different message
+          toast({
+            variant: "default",
+            title: "Jumbo Roll Scanned",
+            description: `Jumbo Roll scanned successfully. Weight: ${result.stock?.weight || "unknown"}`,
+          });
         } else if (currentScannedCount >= currentItem.quantity) {
           // For other item types, enforce the quantity limit strictly
           setLastScanError(`Already scanned all ${currentItem.quantity} items of this type`);
