@@ -6,6 +6,7 @@ import { formatCurrency } from "../utils/format-currency";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Package, DollarSign, CheckSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useRouter } from "next/navigation";
 
 interface OverviewCardsProps {
   inventoryCount: {
@@ -28,11 +29,19 @@ export function OverviewCards({
   isLoading,
 }: OverviewCardsProps) {
   const { t } = useTranslation();
-  
+  const router = useRouter();
+  // Example trend data (replace with real data if available)
+  const inventoryTrend = 5; // +5 items this month
+  const salesTrend = 12; // +12% revenue
+  const tasksTrend = -2; // -2 tasks vs last week
+
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <PermissionGate resource="inventory" action="read">
-        <Card>
+        <Card
+          className="glassmorph hover:shadow-lg transition cursor-pointer border border-gray-200/60 backdrop-blur-md bg-white/60 dark:bg-gray-900/60"
+          onClick={() => router.push('/inventory/stock')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               {t('dashboard.cards.inventory')}
@@ -53,13 +62,20 @@ export function OverviewCards({
                 <span>{t('dashboard.cards.stock')}: {inventoryCount.stock}</span>
                 <span>{t('dashboard.cards.divided')}: {inventoryCount.divided}</span>
               </div>
+              <div className="flex items-center gap-1 mt-1">
+                <span className={`text-xs font-semibold ${inventoryTrend >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{inventoryTrend >= 0 ? '+' : ''}{inventoryTrend}</span>
+                <span className="text-xs text-muted-foreground">{t('dashboard.cards.trend', 'this month')}</span>
+              </div>
             </div>
           </CardContent>
         </Card>
       </PermissionGate>
       
       <PermissionGate resource="sales" action="read">
-        <Card>
+        <Card
+          className="glassmorph hover:shadow-lg transition cursor-pointer border border-gray-200/60 backdrop-blur-md bg-white/60 dark:bg-gray-900/60"
+          onClick={() => router.push('/sales/orders')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               {t('dashboard.cards.sales')}
@@ -79,13 +95,20 @@ export function OverviewCards({
               <p className="text-xs text-muted-foreground">
                 {t('dashboard.cards.orders')}: {sales.orderCount}
               </p>
+              <div className="flex items-center gap-1 mt-1">
+                <span className={`text-xs font-semibold ${salesTrend >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{salesTrend >= 0 ? '+' : ''}{salesTrend}%</span>
+                <span className="text-xs text-muted-foreground">{t('dashboard.cards.trend', 'vs last month')}</span>
+              </div>
             </div>
           </CardContent>
         </Card>
       </PermissionGate>
       
       <PermissionGate resource="tasks" action="read">
-        <Card>
+        <Card
+          className="glassmorph hover:shadow-lg transition cursor-pointer border border-gray-200/60 backdrop-blur-md bg-white/60 dark:bg-gray-900/60"
+          onClick={() => router.push('/tasks')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               {t('dashboard.cards.tasks')}
@@ -101,6 +124,10 @@ export function OverviewCards({
             <p className="text-xs text-muted-foreground">
               {t('dashboard.cards.pendingTasks')}
             </p>
+            <div className="flex items-center gap-1 mt-1">
+              <span className={`text-xs font-semibold ${tasksTrend <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{tasksTrend > 0 ? '+' : ''}{tasksTrend}</span>
+              <span className="text-xs text-muted-foreground">{t('dashboard.cards.trend', 'vs last week')}</span>
+            </div>
           </CardContent>
         </Card>
       </PermissionGate>
