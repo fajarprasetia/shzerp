@@ -2,6 +2,59 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/session';
 
+// Function to generate a new invoice number in the format INV-YYYYMMDD-XXXXX
+async function generateInvoiceNumber(date: Date): Promise<string> {
+  // Format date as YYYYMMDD
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const datePrefix = `INV-${year}${month}${day}`;
+  
+  // Find existing invoices with this date prefix
+  const existingInvoices = await prisma.invoice.findMany({
+    where: {
+      invoiceNo: {
+        startsWith: datePrefix
+      }
+    },
+    orderBy: {
+      invoiceNo: 'desc'
+    }
+  });
+  
+  // If no invoices exist with this prefix, start with 00001
+  if (existingInvoices.length === 0) {
+    return `${datePrefix}-00001`;
+  }
+  
+  // Create a Set of all sequence numbers in use
+  const usedSequences = new Set<number>();
+  
+  // Extract and store existing sequence numbers
+  existingInvoices.forEach(invoice => {
+    try {
+      // Extract the sequence part (XXXXX) from the invoice number
+      const sequencePart = invoice.invoiceNo.split('-')[2];
+      if (sequencePart && /^\d{5}$/.test(sequencePart)) {
+        usedSequences.add(parseInt(sequencePart, 10));
+      }
+    } catch (error) {
+      console.warn('Could not parse invoice number:', invoice.invoiceNo);
+    }
+  });
+  
+  // Find the first available number between 1 and 99999
+  let nextSequence = 1;
+  while (usedSequences.has(nextSequence) && nextSequence <= 99999) {
+    nextSequence++;
+  }
+  
+  // Format the sequence with leading zeros
+  const sequenceFormatted = String(nextSequence).padStart(5, '0');
+  
+  return `${datePrefix}-${sequenceFormatted}`;
+}
+
 // POST /api/sales/orders/[id]/invoice - Generate or update invoice from order
 export async function POST(
   request: Request,
@@ -139,9 +192,12 @@ export async function POST(
       );
     }
     
+    // Generate a new invoice number using our custom function
+    const invoiceNo = await generateInvoiceNumber(invoiceDate);
+    
     // If no existing invoice, create a new one
     console.log('Creating new invoice with data:', {
-      invoiceNo: `INV-${order.orderNo}`,
+      invoiceNo,
       orderId: order.id,
       customerId: order.customerId,
       customerName: order.customer.name,
@@ -177,7 +233,7 @@ export async function POST(
     // Then create the invoice with a reference to the accounts receivable
     const invoice = await prisma.invoice.create({
       data: {
-        invoiceNo: `INV-${order.orderNo}`,
+        invoiceNo,
         orderId: order.id,
         customerId: order.customerId,
         customerName: order.customer.name,

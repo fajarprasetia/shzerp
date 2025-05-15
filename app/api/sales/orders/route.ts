@@ -192,17 +192,41 @@ export async function POST(req: Request) {
       };
     });
 
-    // Generate a unique order number - improved implementation
-    // Format: YYYYMMDD-XXX where XXX is a unique timestamp-based suffix
-    const today = new Date();
-    const dateString = today.toISOString().slice(0, 10).replace(/-/g, '');
-    
-    // Always include a timestamp component for guaranteed uniqueness
-    const timestamp = Date.now() % 1000000; // Last 6 digits of timestamp
-    const randomComponent = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    
-    // Combine date with timestamp and random component for guaranteed uniqueness
-    const orderNumber = `${dateString}-${timestamp}-${randomComponent}`;
+    // Generate a unique order number using the new SO-YYYYMMDDXXX format
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const datePrefix = `SO-${year}${month}${day}`;
+    const existingOrders = await prisma.order.findMany({
+      where: {
+        orderNo: {
+          startsWith: datePrefix
+        }
+      },
+      orderBy: {
+        orderNo: "asc"
+      }
+    });
+    let nextSequence = 1;
+    if (existingOrders.length > 0) {
+      const usedSequences = new Set<number>();
+      existingOrders.forEach(order => {
+        try {
+          const sequencePart = order.orderNo.split('-')[2];
+          if (sequencePart && /^\d{3}$/.test(sequencePart)) {
+            usedSequences.add(parseInt(sequencePart, 10));
+          }
+        } catch (error) {
+          console.warn('Could not parse order number:', order.orderNo);
+        }
+      });
+      while (usedSequences.has(nextSequence) && nextSequence <= 999) {
+        nextSequence++;
+      }
+    }
+    const sequenceFormatted = String(nextSequence).padStart(3, '0');
+    const orderNumber = `${datePrefix}${sequenceFormatted}`;
     
     console.log(`Generated guaranteed unique order number: ${orderNumber}`);
 
@@ -243,14 +267,13 @@ export async function POST(req: Request) {
       // Handle unique constraint errors specifically
       if (error.code === 'P2002' && error.meta?.target?.includes('orderNo')) {
         console.error(`Unique constraint error on orderNo: ${orderNumber}`);
-        
-        // Create a new order number with timestamp to guarantee uniqueness
-        const timestamp = Date.now().toString().slice(-6);
-        const emergencyOrderNumber = `${dateString}-${timestamp}`;
-        
+        // Try next available sequence
+        let emergencySequence = nextSequence + 1;
+        while (usedSequences.has(emergencySequence) && emergencySequence <= 999) {
+          emergencySequence++;
+        }
+        const emergencyOrderNumber = `${datePrefix}${String(emergencySequence).padStart(3, '0')}`;
         console.log(`Retrying with emergency order number: ${emergencyOrderNumber}`);
-        
-        // Try once more with the emergency order number
         const order = await prisma.order.create({
           data: {
             orderNo: emergencyOrderNumber,
@@ -280,10 +303,8 @@ export async function POST(req: Request) {
             customer: true
           }
         });
-        
         return NextResponse.json(order);
       }
-      
       // Re-throw other errors
       throw error;
     }

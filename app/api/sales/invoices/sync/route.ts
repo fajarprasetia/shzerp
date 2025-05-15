@@ -36,40 +36,64 @@ export async function POST(request: Request) {
       // For existing orders with payment proof, use their status
       const paymentStatus = order.paymentImage ? "PAID" : "PENDING";
       
-      // Create an invoice record
+      // Generate invoice number based on order number (SO-YYYYMMDDXXX -> INV-YYYYMMDDXXX)
+      const orderNo = order.orderNo;
+      const match = orderNo.match(/^SO-(\d{4})(\d{2})(\d{2})(\d{3})$/);
+      if (!match) throw new Error('Invalid order number format');
+      const [_, year, month, day, sequence] = match;
+      const invoiceNo = `INV-${year}${month}${day}${sequence}`;
+      
+      // Check for existing invoice with this number
+      const existing = await prisma.invoice.findUnique({ where: { invoiceNo } });
+      if (existing) {
+        // Skip or handle as needed (skip for now)
+        return null;
+      }
+      
+      // Create the invoice
       return prisma.invoice.create({
         data: {
-          invoiceNo: `INV-${order.orderNo}`,
+          invoiceNo,
           orderId: order.id,
           customerId: order.customerId,
           customerName: order.customer.name,
           customerAddress: order.customer.address || "",
-          totalAmount: order.totalAmount || order.orderItems.reduce((sum, item) => sum + (item.total || 0), 0),
+          totalAmount: order.totalAmount || 0,
           paymentStatus: paymentStatus,
           paymentDate: paymentStatus === "PAID" ? new Date() : null,
           paymentImage: order.paymentImage || null,
           paymentMethod: order.paymentMethod || "Bank Transfer",
-          reference: order.reference || null,
-          
-          // Create or update accounts receivable record
-          accountsReceivable: {
-            connectOrCreate: {
-              where: {
-                id: `ar-${order.customerId}`
-              },
-              create: {
-                id: `ar-${order.customerId}`,
-                customerId: order.customerId,
-                totalAmount: order.totalAmount || 0,
-                paidAmount: paymentStatus === "PAID" ? (order.totalAmount || 0) : 0,
-                status: paymentStatus === "PAID" ? "CLOSED" : "OPEN",
-                dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
-              }
-            }
-          }
+          reference: order.reference || null
         }
       });
     });
+
+    // First create the accounts receivable records
+    await Promise.all(orders.map(async (order) => {
+      const paymentStatus = order.paymentImage ? "PAID" : "PENDING";
+      const totalAmount = order.totalAmount || 0;
+      
+      // Create or update accounts receivable record separately
+      return prisma.accountsReceivable.upsert({
+        where: {
+          id: `ar-${order.customerId}`
+        },
+        create: {
+          id: `ar-${order.customerId}`,
+          customerId: order.customerId,
+          totalAmount: totalAmount,
+          paidAmount: paymentStatus === "PAID" ? totalAmount : 0,
+          status: paymentStatus === "PAID" ? "CLOSED" : "OPEN",
+          dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+        },
+        update: {
+          totalAmount: { increment: totalAmount },
+          paidAmount: paymentStatus === "PAID" ? { increment: totalAmount } : undefined,
+          status: paymentStatus === "PAID" ? "CLOSED" : "OPEN",
+          updatedAt: new Date()
+        }
+      });
+    }));
 
     const createdInvoices = await Promise.all(invoicePromises);
 

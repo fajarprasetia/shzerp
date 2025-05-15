@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
+import { id } from "date-fns/locale";
 import { Customer } from "@prisma/client";
 
 interface OrderItem {
@@ -112,6 +113,78 @@ function calculateItemTotal(item: OrderItem): number {
   return subtotal * taxMultiplier;
 }
 
+function addTableHeader(startY: number, doc: jsPDF, pageWidth: number) {
+  console.log('Adding table header at Y position:', startY);
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.1);
+
+  // Define the table's starting position and total width
+  const tableStartX = 20;
+  const tableWidth = 170; // 190 - 20 = 170mm total width
+  
+  // Calculate dynamic column widths based on typical content and importance
+  // Define column configuration with minimum widths and flex factors
+  const columns = [
+    { name: "Produk", minWidth: 40, flex: 3 },      // More space for product details
+    { name: "Tipe", minWidth: 22, flex: 2 },        // Specs like width/length
+    { name: "Qty", minWidth: 15, flex: 1 },         // Quantity is usually short
+    { name: "Harga (Rp)", minWidth: 20, flex: 1.5 }, // Price needs moderate space
+    { name: "Pajak (%)", minWidth: 15, flex: 1 },    // Tax percentage is usually short
+    { name: "Jumlah (Rp)", minWidth: 22, flex: 2 }   // Total amount needs good space
+  ];
+  
+  // Calculate total flex units
+  const totalFlex = columns.reduce((sum, col) => sum + col.flex, 0);
+  
+  // Calculate minimum required width and remaining space
+  const minRequiredWidth = columns.reduce((sum, col) => sum + col.minWidth, 0);
+  const remainingSpace = tableWidth - minRequiredWidth;
+  
+  // Calculate actual widths for each column
+  const columnWidths = columns.map(col => {
+    // Base width is minimum plus proportional share of remaining space
+    return col.minWidth + (remainingSpace * col.flex / totalFlex);
+  });
+  
+  // Draw top horizontal line of table
+  doc.line(tableStartX, startY, tableStartX + tableWidth, startY);
+  
+  // Set font for headers
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  
+  // Calculate column positions (starting x-coordinate for each column)
+  const xPositions = [];
+  let currentX = tableStartX;
+  xPositions.push(currentX); // Starting position
+  
+  // Draw column headers and calculate positions
+  columns.forEach((col, i) => {
+    // Center text within the column
+    const textX = currentX + (columnWidths[i] / 2);
+    doc.text(col.name, textX, startY + 5, { align: "center" });
+    
+    // Move to next column position
+    currentX += columnWidths[i];
+    xPositions.push(currentX); // This will be the start of the next column
+  });
+  
+  // Draw bottom horizontal line of header
+  doc.line(tableStartX, startY + 6, tableStartX + tableWidth, startY + 6);
+  
+  // Draw vertical lines for each column boundary
+  xPositions.forEach(x => {
+    doc.line(x, startY, x, startY + 6);
+  });
+  
+  // Return both the next Y position and the column positions for item rendering
+  return {
+    nextY: startY + 6,
+    columnPositions: xPositions,
+    columnWidths: columnWidths
+  };
+}
+
 export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
   console.log('Starting PDF generation with order:', {
     id: order.id,
@@ -166,7 +239,8 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
     // Add header
     let currentY = 0;
     let startY = addHeader(currentY, doc, order, customer, pageWidth);
-    currentY = addTableHeader(startY, doc, pageWidth);
+    let tableInfo = addTableHeader(startY, doc, pageWidth);
+    currentY = tableInfo.nextY;
     
     // Add "No items" message
     doc.setFont("helvetica", "italic");
@@ -247,7 +321,10 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
     currentY = pageIndex % 2 === 0 ? 0 : invoiceHeight;
     
     let startY = addHeader(currentY, doc, order, customer, pageWidth);
-    currentY = addTableHeader(startY, doc, pageWidth);
+    let tableInfo = addTableHeader(startY, doc, pageWidth);
+    currentY = tableInfo.nextY;
+    const colPos = tableInfo.columnPositions; // Get the column positions
+    const colWidths = tableInfo.columnWidths;  // Get the column widths
 
     items.forEach((item, itemIndex) => {
       console.log(`Processing item ${itemIndex + 1} in chunk ${pageIndex + 1}:`, {
@@ -278,7 +355,7 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
       if (gsmStr && gsmStr !== '-' && gsmStr !== 'Unknown' && gsmStr !== '0') {
         produkText += ` ${gsmStr}gsm`;
       }
-      doc.text(produkText, 22, currentY + 5);
+      doc.text(produkText, colPos[0] + colWidths[0]/2, currentY + 5, { align: "center" });
 
       // Tipe column (Width x Length or just Width)
       let width = "N/A";
@@ -299,7 +376,7 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
           length = ` x ${item.divided.length}`;
         }
       }
-      doc.text(`${width}${length}`, 72, currentY + 5);
+      doc.text(`${width}${length}`, colPos[1] + colWidths[1]/2, currentY + 5, { align: "center" });
 
       // Quantity column
       let qtyText = "N/A";
@@ -309,16 +386,16 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
       } else {
         qtyText = item.quantity ? `${item.quantity} Roll` : "N/A";
       }
-      doc.text(qtyText, 97, currentY + 5);
+      doc.text(qtyText, colPos[2] + colWidths[2]/2, currentY + 5, { align: "center" });
 
-      // Price, Tax, and Amount
-      doc.text(formatCurrency(item.price).replace("Rp", "").trim(), 117, currentY + 5);
-      doc.text(item.tax.toString(), 142, currentY + 5);
+      // Price, Tax, and Amount - align right for price and amount
+      doc.text(formatCurrency(item.price).replace("Rp", "").trim(), colPos[3] + colWidths[3] - 2, currentY + 5, { align: "right" });
+      doc.text(item.tax.toString(), colPos[4] + colWidths[4]/2, currentY + 5, { align: "center" });
       const itemTotal = calculateItemTotal(item);
-      doc.text(formatCurrency(itemTotal).replace("Rp", "").trim(), 167, currentY + 5);
+      doc.text(formatCurrency(itemTotal).replace("Rp", "").trim(), colPos[5] + colWidths[5] - 2, currentY + 5, { align: "right" });
 
       console.log('Added item to PDF:', {
-        position: { x: currentY, y: currentY + 5 },
+        position: { y: currentY, y_text: currentY + 5 },
         text: {
           product: produkText,
           specs: `${width}${length}`,
@@ -329,16 +406,13 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
         }
       });
 
-      // Draw horizontal line
-      doc.line(20, currentY + 6, 190, currentY + 6);
-      // Draw vertical lines with adjusted positions
-      doc.line(20, currentY, 20, currentY + 6);
-      doc.line(70, currentY, 70, currentY + 6);
-      doc.line(95, currentY, 95, currentY + 6);
-      doc.line(115, currentY, 115, currentY + 6);
-      doc.line(140, currentY, 140, currentY + 6);
-      doc.line(165, currentY, 165, currentY + 6);
-      doc.line(190, currentY, 190, currentY + 6);
+      // Draw horizontal line below the row
+      doc.line(colPos[0], currentY + 6, colPos[colPos.length - 1], currentY + 6);
+      
+      // Draw vertical lines for all columns
+      colPos.forEach((x, i) => {
+        doc.line(x, currentY, x, currentY + 6);
+      });
 
       currentY += itemHeight;
       totalQty += item.quantity || 0;
@@ -355,17 +429,34 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
     // Add totals and warranty info for each invoice section
     currentY += itemHeight;
     doc.setFont("helvetica", "bold");
-    doc.text("Subtotal:", 142, currentY + 5);
-    doc.text(formatCurrency(subtotal).replace("Rp", "").trim(), 167, currentY + 5);
+    // Position totals better with the new column layout
+    const totalLabelX = colPos[4];
+    const totalValueX = colPos[5] + colWidths[5] - 2;
+    
+    doc.text("Subtotal:", totalLabelX, currentY + 5);
+    doc.text(formatCurrency(subtotal).replace("Rp", "").trim(), totalValueX, currentY + 5, { align: "right" });
     
     // Only show Diskon if discount > 0
     currentY += itemHeight;
-    doc.text("Diskon:", 142, currentY + 5);
-    doc.text(formatCurrency(order.totalAmount - subtotal).replace("Rp", "").trim(), 167, currentY + 5);
+    doc.text("Diskon:", totalLabelX, currentY + 5);
+    doc.text(formatCurrency(order.totalAmount - subtotal).replace("Rp", "").trim(), totalValueX, currentY + 5, { align: "right" });
     
+    // Make Total row larger and more prominent
     currentY += itemHeight;
-    doc.text("Total:", 142, currentY + 5);
-    doc.text(formatCurrency(order.totalAmount).replace("Rp", "").trim(), 167, currentY + 5);
+    // Increase font size for better visibility
+    doc.setFontSize(11);
+    // Draw a background rectangle for emphasis
+    doc.setFillColor(245, 245, 245); // Light gray background
+    // Rectangle coordinates: x, y, width, height
+    doc.rect(totalLabelX - 10, currentY, colPos[colPos.length-1] - totalLabelX + 10, 8, 'F');
+    // Set bold font for total
+    doc.setFont("helvetica", "bold");
+    doc.text("Total:", totalLabelX, currentY + 5);
+    // Format value with Rp prefix and make sure it's not trimmed
+    const formattedTotal = formatCurrency(order.totalAmount);
+    doc.text(formattedTotal, totalValueX, currentY + 5, { align: "right" });
+    // Reset font size to normal
+    doc.setFontSize(8);
 
     console.log('Added totals:', {
       position: { y: currentY + 5 },
@@ -429,7 +520,14 @@ function addHeader(startY: number, doc: jsPDF, order: Order, customer: any, page
   doc.setFontSize(8);
   doc.setFont("helvetica", "bold");
   doc.text(`No: ${order.orderNo}`, pageWidth - 20, startY + 18, { align: "right" });
-  doc.text(`Tanggal: ${format(new Date(order.createdAt), "dd MMMM yyyy")}`, pageWidth - 20, startY + 22, { align: "right" });
+  
+  // Format date with Indonesian locale
+  const formattedDate = format(
+    new Date(order.createdAt), 
+    "dd MMMM yyyy", 
+    { locale: id }
+  );
+  doc.text(`Tanggal: ${formattedDate}`, pageWidth - 20, startY + 22, { align: "right" });
 
   // Customer Details - Right Side
   doc.text("No. Kontak:", pageWidth - 70, startY + 28);
@@ -446,33 +544,4 @@ function addHeader(startY: number, doc: jsPDF, order: Order, customer: any, page
   doc.text(customer?.address ?? "-", pageWidth - 20, startY + 44, { align: "right" });
 
   return startY + 48;
-}
-
-function addTableHeader(startY: number, doc: jsPDF, pageWidth: number) {
-  console.log('Adding table header at Y position:', startY);
-  doc.setDrawColor(0);
-  doc.setLineWidth(0.1);
-
-  // Adjusted column positions for more space for 'Jumlah (Rp)'
-  doc.line(20, startY, 190, startY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text("Produk", 22, startY + 5);
-  doc.text("Tipe", 72, startY + 5); // Reduced width for Tipe
-  doc.text("Qty", 97, startY + 5);
-  doc.text("Harga (Rp)", 117, startY + 5);
-  doc.text("Pajak (%)", 142, startY + 5);
-  doc.text("Jumlah (Rp)", 167, startY + 5);
-  doc.line(20, startY + 6, 190, startY + 6);
-
-  // Vertical lines for each column
-  doc.line(20, startY, 20, startY + 6);  // Start
-  doc.line(70, startY, 70, startY + 6);  // After Produk
-  doc.line(95, startY, 95, startY + 6);  // After Tipe
-  doc.line(115, startY, 115, startY + 6); // After Qty
-  doc.line(140, startY, 140, startY + 6); // After Harga
-  doc.line(165, startY, 165, startY + 6); // After Pajak
-  doc.line(190, startY, 190, startY + 6); // End
-
-  return startY + 6;
 } 

@@ -43,6 +43,8 @@ interface OrderWithRelations {
   paymentMethod: string | null;
   reference: string | null;
   journalEntryId: string | null;
+  discount: number | null;
+  discountType: string | null;
 }
 
 // Component for order view dialog 
@@ -68,6 +70,23 @@ export function OrderViewDialog({
           </DialogTitle>
         </DialogHeader>
         <OrderDetails order={order} />
+        {/* Discount Section */}
+        <div className="mt-4 flex flex-col gap-1 border-t pt-4">
+          <div className="font-semibold">
+            {t('sales.orders.discount', 'Discount')}
+          </div>
+          <div>
+            {order.discount ? (
+              <span>
+                {order.discountType === 'value'
+                  ? `Rp${Number(order.discount).toLocaleString('id-ID')}`
+                  : `${order.discount}%`}
+              </span>
+            ) : (
+              <span>-</span>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -132,6 +151,18 @@ export function getColumns(
       id: "itemCount",
       header: t('sales.orders.itemCount', 'Order Items'),
       cell: ({ row }) => row.original.orderItems.length,
+    },
+    {
+      accessorKey: "discount",
+      header: t('sales.orders.discount', 'Discount'),
+      cell: ({ row }) => {
+        const discount = row.original.discount;
+        const discountType = row.original.discountType;
+        if (!discount) return '-';
+        return discountType === 'value'
+          ? `Rp${Number(discount).toLocaleString('id-ID')}`
+          : `${discount}%`;
+      },
     },
     {
       accessorKey: "totalAmount",
