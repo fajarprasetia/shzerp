@@ -620,26 +620,68 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
       if (matchedOrderItem && (result.stock || result.divided)) {
         const scannedItem = result.stock || result.divided;
         
+        // Helper function to normalize values for comparison
+        const normalize = (value: any): number => {
+          // If value is already a number, return it
+          if (typeof value === 'number') return value;
+          
+          // If it's a string, extract numeric value
+          if (typeof value === 'string') {
+            // Remove any non-digit characters except the decimal point
+            const numericString = value.replace(/[^\d.]/g, '');
+            return parseFloat(numericString);
+          }
+          
+          // If not a string or number, return NaN to fail comparison
+          return NaN;
+        };
+        
         // Check GSM if both have it defined
-        if (matchedOrderItem.gsm && scannedItem.gsm && 
-            matchedOrderItem.gsm !== scannedItem.gsm) {
-          specificationsMismatch = true;
-          mismatchDetails.push(`GSM: ordered ${matchedOrderItem.gsm}, scanned ${scannedItem.gsm}`);
+        if (matchedOrderItem.gsm && scannedItem.gsm) {
+          const orderedGsm = normalize(matchedOrderItem.gsm);
+          const scannedGsm = normalize(scannedItem.gsm);
+          
+          if (!isNaN(orderedGsm) && !isNaN(scannedGsm) && orderedGsm !== scannedGsm) {
+            specificationsMismatch = true;
+            mismatchDetails.push(`GSM: ordered ${matchedOrderItem.gsm}, scanned ${scannedItem.gsm}`);
+          }
         }
         
         // Check width if both have it defined
-        if (matchedOrderItem.width && scannedItem.width && 
-            matchedOrderItem.width !== scannedItem.width) {
-          specificationsMismatch = true;
-          mismatchDetails.push(`Width: ordered ${matchedOrderItem.width}, scanned ${scannedItem.width}`);
+        if (matchedOrderItem.width && scannedItem.width) {
+          const orderedWidth = normalize(matchedOrderItem.width);
+          const scannedWidth = normalize(scannedItem.width);
+          
+          if (!isNaN(orderedWidth) && !isNaN(scannedWidth) && orderedWidth !== scannedWidth) {
+            specificationsMismatch = true;
+            mismatchDetails.push(`Width: ordered ${matchedOrderItem.width}, scanned ${scannedItem.width}`);
+          }
         }
         
         // Check length if both have it defined
-        if (matchedOrderItem.length && scannedItem.length && 
-            matchedOrderItem.length !== scannedItem.length) {
-          specificationsMismatch = true;
-          mismatchDetails.push(`Length: ordered ${matchedOrderItem.length}, scanned ${scannedItem.length}`);
+        if (matchedOrderItem.length && scannedItem.length) {
+          const orderedLength = normalize(matchedOrderItem.length);
+          const scannedLength = normalize(scannedItem.length);
+          
+          if (!isNaN(orderedLength) && !isNaN(scannedLength) && orderedLength !== scannedLength) {
+            specificationsMismatch = true;
+            mismatchDetails.push(`Length: ordered ${matchedOrderItem.length}, scanned ${scannedItem.length}`);
+          }
         }
+        
+        // Add debug log to see what's happening with the comparison
+        console.log('Specification comparison:', {
+          orderItem: {
+            gsm: matchedOrderItem.gsm,
+            width: matchedOrderItem.width,
+            length: matchedOrderItem.length
+          },
+          scannedItem: {
+            gsm: scannedItem.gsm,
+            width: scannedItem.width,
+            length: scannedItem.length
+          }
+        });
         
         if (specificationsMismatch) {
           setLastScanError(`Item specifications don't match order. ${mismatchDetails.join(', ')}. Please scan a different item.`);
