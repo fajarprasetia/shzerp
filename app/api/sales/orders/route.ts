@@ -179,10 +179,10 @@ export async function POST(req: Request) {
       return {
         type: item.type,
         product: item.product || null,
-        gsm: item.gsm || null,
-        width: item.width || null,
-        length: item.length || null,
-        weight: item.weight || null,
+        gsm: item.gsm !== undefined && item.gsm !== null ? String(item.gsm) : null,
+        width: item.width !== undefined && item.width !== null ? String(item.width) : null,
+        length: item.length !== undefined && item.length !== null ? String(item.length) : null,
+        weight: item.weight !== undefined && item.weight !== null ? String(item.weight) : null,
         quantity: Number(item.quantity),
         price: Number(item.price),
         tax: Number(item.tax || 0),
@@ -209,8 +209,8 @@ export async function POST(req: Request) {
       }
     });
     let nextSequence = 1;
+    const usedSequences = new Set<number>();
     if (existingOrders.length > 0) {
-      const usedSequences = new Set<number>();
       existingOrders.forEach(order => {
         try {
           const sequencePart = order.orderNo.split('-')[2];

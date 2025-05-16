@@ -646,18 +646,19 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
 
       // Process order items
       const orderItems = data.orderItems.map(item => {
-        console.log('Processing item for submission:', item);
-        
         // Validate item fields
         if (!item.type) {
           throw new Error(t('sales.orders.errors.itemTypeRequired', 'Item type is required'));
         }
-        
         // Ensure numeric values are properly converted
-        const quantity = Number(item.quantity);
-        const price = Number(item.price);
-        const tax = Number(item.tax || 0);
-        
+        const quantity = Number(item.quantity) || 0;
+        const price = Number(item.price) || 0;
+        const tax = Number(item.tax) || 0;
+        const gsm = item.gsm !== undefined && item.gsm !== null ? Number(item.gsm) : null;
+        const width = item.width !== undefined && item.width !== null ? Number(item.width) : null;
+        const length = item.length !== undefined && item.length !== null ? Number(item.length) : null;
+        const weight = item.weight !== undefined && item.weight !== null ? Number(item.weight) : null;
+
         if (!quantity || quantity <= 0) {
           throw new Error(t('sales.orders.errors.invalidQuantity', 'Invalid quantity'));
         }
@@ -666,60 +667,60 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         }
 
         // If stockId is already set, use it
-        let productId = item.stockId || '';
-        
+        let stockId = item.stockId || '';
+        let productId = '';
+
         // If stockId is not set, try to find the matching stock
-        if (!productId) {
+        if (!stockId) {
           if (item.type === 'Sublimation Paper') {
             if (item.product === 'Roll') {
-              // For Roll, find matching divided stock
               const matchingDividedStock = dividedStocks.find(d => 
-                d.gsm?.toString() === item.gsm && 
-                d.width?.toString() === item.width &&
-                d.length?.toString() === item.length &&
+                d.gsm?.toString() === String(item.gsm) && 
+                d.width?.toString() === String(item.width) &&
+                d.length?.toString() === String(item.length) &&
                 d.remainingLength > 0 &&
                 (d.isSold === false || d.isSold === undefined)
               );
-              
+              stockId = matchingDividedStock?.id || '';
               productId = matchingDividedStock?.id || '';
-              console.log('Found matching Roll stock for submission:', { dividedStock: matchingDividedStock, productId });
             } else if (item.product === 'Jumbo Roll') {
-              // For Jumbo Roll, find matching stock
               const stock = stocks.find(s =>
                 s.type === item.type &&
-                s.gsm?.toString() === item.gsm &&
-                s.width?.toString() === item.width &&
-                s.weight?.toString() === item.weight &&
+                s.gsm?.toString() === String(item.gsm) &&
+                s.width?.toString() === String(item.width) &&
+                s.weight?.toString() === String(item.weight) &&
                 s.remainingLength > 0 &&
                 (s.isSold === false || s.isSold === undefined)
               );
-              
+              stockId = stock?.id || '';
               productId = stock?.id || '';
-              console.log('Found matching Jumbo Roll stock for submission:', { stock, productId });
             }
           } else if (item.type === 'Protect Paper') {
-            // For Protect Paper, find matching stock
             const stock = stocks.find(s =>
               s.type === item.type &&
-              s.gsm?.toString() === item.gsm &&
-              s.width?.toString() === item.width &&
-              s.weight?.toString() === item.weight &&
+              s.gsm?.toString() === String(item.gsm) &&
+              s.width?.toString() === String(item.width) &&
+              s.weight?.toString() === String(item.weight) &&
               s.remainingLength > 0 &&
               (s.isSold === false || s.isSold === undefined)
             );
-            
+            stockId = stock?.id || '';
             productId = stock?.id || '';
-            console.log('Found matching Protect Paper stock for submission:', { stock, productId });
           } else if (item.type === 'DTF Film' || item.type === 'Ink') {
-            // For DTF or Ink, find any available stock
             const stock = stocks.find(s =>
               s.type === item.type &&
               s.remainingLength > 0 &&
               (s.isSold === false || s.isSold === undefined)
             );
-            
+            stockId = stock?.id || '';
             productId = stock?.id || '';
-            console.log('Found matching DTF/Ink stock for submission:', { stock, productId });
+          }
+        } else {
+          // If stockId is set, use it as productId for non-Roll
+          if (item.type === 'Sublimation Paper' && item.product === 'Roll') {
+            productId = stockId;
+          } else {
+            productId = stockId;
           }
         }
 
@@ -727,20 +728,19 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           throw new Error(t('sales.orders.errors.productRequired', 'Please select a valid product from inventory'));
         }
 
-        const baseItem = {
+        return {
           type: item.type,
           product: item.product || null,
-          gsm: item.gsm || null,
-          width: item.width || null,
-          length: item.length || null,
-          weight: item.weight || null,
-          quantity: quantity,
-          price: price,
-          tax: tax,
-          productId: productId, // Use the found or existing productId
+          gsm,
+          width,
+          length,
+          weight,
+          quantity,
+          price,
+          tax,
+          stockId,
+          productId,
         };
-
-        return baseItem;
       });
 
       console.log('Prepared order items for submission:', orderItems);

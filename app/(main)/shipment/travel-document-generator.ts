@@ -219,39 +219,39 @@ export async function generateTravelDocumentPDF(
         let rowHeight = Math.max(10, 5 + (linesThisPage * 5) + 2);
         // Product column
         doc.setFontSize(9);
-        doc.text(item.productName || "-", 25, currentY + 5);
+      doc.text(item.productName || "-", 25, currentY + 5);
         doc.setFontSize(8);
         // Specifications column
-        let specs = [];
-        if (item.gsm) specs.push(`${item.gsm}g`);
-        if (item.width) specs.push(`${item.width}mm`);
-        if (item.length) specs.push(`${item.length}m`);
-        if (item.weight) specs.push(`${item.weight}kg`);
-        const specsText = specs.join(' × ');
-        doc.text(specsText || "-", 65, currentY + 5);
+      let specs = [];
+      if (item.gsm) specs.push(`${item.gsm}g`);
+      if (item.width) specs.push(`${item.width}mm`);
+      if (item.length) specs.push(`${item.length}m`);
+      if (item.weight) specs.push(`${item.weight}kg`);
+      const specsText = specs.join(' × ');
+      doc.text(specsText || "-", 65, currentY + 5);
         // SKU/Barcode column
         let barcodeY = currentY + 5;
         for (let i = 0; i < linesThisPage; i++) {
           if (item.identifierNumber && lineIndex === 0 && i === 0) {
-            doc.setFont("helvetica", "bold");
+        doc.setFont("helvetica", "bold");
             doc.text(barcodeLines[lineIndex + i], 150, barcodeY, { align: "center" });
-            doc.setFont("helvetica", "normal");
-          } else {
+        doc.setFont("helvetica", "normal");
+        } else {
             doc.text(barcodeLines[lineIndex + i], 150, barcodeY, { align: "center" });
           }
           barcodeY += 5;
         }
         // Quantity column (only on first row for this item)
         if (firstRow) {
-          doc.setFont("helvetica", "bold");
-          doc.text(item.quantity.toString(), 177, currentY + 5);
-          doc.setFont("helvetica", "normal");
+      doc.setFont("helvetica", "bold");
+      doc.text(item.quantity.toString(), 177, currentY + 5);
+      doc.setFont("helvetica", "normal");
         }
         // Row bottom line
-        doc.line(20, currentY + rowHeight, 190, currentY + rowHeight);
+      doc.line(20, currentY + rowHeight, 190, currentY + rowHeight);
         // Move to next row/section
-        currentY += rowHeight;
-        sectionEndY = currentY;
+      currentY += rowHeight;
+      sectionEndY = currentY;
         lineIndex += linesThisPage;
         firstRow = false;
         hasRowsInSection = true;
@@ -266,11 +266,11 @@ export async function generateTravelDocumentPDF(
       doc.line(170, sectionStartY, 170, sectionEndY);
       doc.line(190, sectionStartY, 190, sectionEndY);
       // Add total quantity at the bottom
-      doc.setFillColor(245, 245, 245);
-      doc.rect(130, currentY + 5, 60, 10, "F");
-      doc.setFont("helvetica", "bold");
-      doc.text(translate('shipment.document.totalQuantity', 'Total Quantity:'), 140, currentY + 12);
-      doc.text(totalQty.toString(), 177, currentY + 12);
+    doc.setFillColor(245, 245, 245);
+    doc.rect(130, currentY + 5, 60, 10, "F");
+    doc.setFont("helvetica", "bold");
+    doc.text(translate('shipment.document.totalQuantity', 'Total Quantity:'), 140, currentY + 12);
+    doc.text(totalQty.toString(), 177, currentY + 12);
       // Before adding shipping instructions and signature, check if enough space, else move to next half/page
       const neededSpace = 20 + 35 + 45; // 20 for instructions, 35 for signature, 45 for signature lines
       if (currentY + neededSpace > (currentHalf === 0 ? travelDocHeight : travelDocHeight * 2)) {
@@ -286,23 +286,23 @@ export async function generateTravelDocumentPDF(
           sectionStartY = currentY;
         }
       }
-      // Add shipping instructions
-      currentY += 20;
-      doc.setFont("helvetica", "bold");
-      doc.text(translate('shipment.document.shippingInstructions', 'PETUNJUK PENGIRIMAN:'), 20, currentY + 5);
-      doc.setFont("helvetica", "normal");
-      doc.text(translate('shipment.document.instruction1', '1. Pastikan barang yang diterima sesuai dengan dokumen perjalanan ini.'), 20, currentY + 12);
-      doc.text(translate('shipment.document.instruction2', '2. Periksa kondisi barang sebelum diterima untuk memastikan tidak ada kerusakan selama pengiriman.'), 20, currentY + 19);
+    // Add shipping instructions
+    currentY += 20;
+    doc.setFont("helvetica", "bold");
+    doc.text(translate('shipment.document.shippingInstructions', 'PETUNJUK PENGIRIMAN:'), 20, currentY + 5);
+    doc.setFont("helvetica", "normal");
+    doc.text(translate('shipment.document.instruction1', '1. Pastikan barang yang diterima sesuai dengan dokumen perjalanan ini.'), 20, currentY + 12);
+    doc.text(translate('shipment.document.instruction2', '2. Periksa kondisi barang sebelum diterima untuk memastikan tidak ada kerusakan selama pengiriman.'), 20, currentY + 19);
       // Signature fields
-      currentY += 35;
+    currentY += 35;
       doc.rect(25, currentY + 5, 50, 25);
       doc.rect(125, currentY + 5, 50, 25);
-      doc.setFont("helvetica", "bold");
-      doc.text(translate('shipment.document.receiver', 'Penerima'), 40, currentY);
-      doc.text(translate('shipment.document.sender', 'Pengirim'), 140, currentY);
-      doc.setFont("helvetica", "normal");
-      doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 25, currentY + 40);
-      doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 125, currentY + 40);
+    doc.setFont("helvetica", "bold");
+    doc.text(translate('shipment.document.receiver', 'Penerima'), 40, currentY);
+    doc.text(translate('shipment.document.sender', 'Pengirim'), 140, currentY);
+    doc.setFont("helvetica", "normal");
+    doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 25, currentY + 40);
+    doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 125, currentY + 40);
     }
     // Prepare for next chunk: if not last, move to next half or page
     if (chunkIndex < chunks.length - 1) {
@@ -311,7 +311,7 @@ export async function generateTravelDocumentPDF(
         currentY = startNewHalf(1);
         sectionStartY = currentY;
       } else {
-        doc.addPage();
+      doc.addPage();
         currentHalf = 0;
         currentY = startNewHalf(0);
         sectionStartY = currentY;

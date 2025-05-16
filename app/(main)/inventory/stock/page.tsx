@@ -32,6 +32,7 @@ import { useTranslation } from "react-i18next";
 import i18nInstance from "@/app/i18n";
 // Import the context provider and batch print button
 import { SelectedBarcodesProvider, BatchPrintButton, useSelectedBarcodes } from "./columns";
+import { InventoryLogsTable } from "../components/InventoryLogsTable";
 
 export default withPermission(StockPage, "inventory", "read");
 
@@ -232,10 +233,11 @@ function StockPageContent() {
             <BatchPrintButton />
           </div>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-6">
+            <TabsList className="grid w-full grid-cols-4 mb-6">
               <TabsTrigger value="available">{t('inventory.stock.availableStock', 'Available Stock')}</TabsTrigger>
               <TabsTrigger value="stockout">{t('inventory.stock.stockOut', 'Stock Out')}</TabsTrigger>
               <TabsTrigger value="sold">{t('inventory.stock.soldStock', 'Sold Stock')}</TabsTrigger>
+              <TabsTrigger value="logs">{t('inventory.logs.title', 'Logs')}</TabsTrigger>
             </TabsList>
             
             <TabsContent value="available" className="w-full">
@@ -284,6 +286,10 @@ function StockPageContent() {
                   { id: "length", displayName: t('inventory.stock.length', 'Length') }
                 ]}
               />
+            </TabsContent>
+            
+            <TabsContent value="logs" className="w-full">
+              <InventoryLogsTable itemType="stock" />
             </TabsContent>
           </Tabs>
         </>

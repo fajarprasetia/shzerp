@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 // Import pre-initialized i18n instance
 import i18nInstance from "@/app/i18n";
+import { InventoryLogsTable } from "../components/InventoryLogsTable";
 
 // Use the interface from the hook with additional fields for our component
 interface ExtendedDividedInfo extends HookDividedWithSoldInfo {
@@ -454,9 +455,10 @@ export default function DividedPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-6">
-        <TabsList className="grid w-full grid-cols-2 mb-6">
+        <TabsList className="grid w-full grid-cols-3 mb-6">
           <TabsTrigger value="available">{t('inventory.divided.availableStock', 'Available Stock')}</TabsTrigger>
           <TabsTrigger value="sold">{t('inventory.divided.soldStock', 'Sold Stock')}</TabsTrigger>
+          <TabsTrigger value="logs">{t('inventory.logs.title', 'Logs')}</TabsTrigger>
         </TabsList>
         
         <TabsContent value="available" className="w-full">
@@ -487,6 +489,9 @@ export default function DividedPage() {
               { id: "length", displayName: t('inventory.divided.length', 'Length') }
             ]}
           />
+        </TabsContent>
+        <TabsContent value="logs" className="w-full">
+          <InventoryLogsTable itemType="divided" />
         </TabsContent>
       </Tabs>
       

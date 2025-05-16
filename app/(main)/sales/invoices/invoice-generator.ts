@@ -513,7 +513,7 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
         colPos = tableInfo.columnPositions;
         colWidths = tableInfo.columnWidths;
       } else {
-        doc.addPage();
+      doc.addPage();
         currentHalf = 0;
         tableInfo = startNewHalf(0);
         colPos = tableInfo.columnPositions;

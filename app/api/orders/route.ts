@@ -81,9 +81,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "At least one order item is required" }, { status: 400 });
     }
 
+    const orderNo = "SO-" + Date.now();
     // Create the order with its items
     const order = await prisma.order.create({
       data: {
+        orderNo,
         customerId,
         note,
         totalAmount,
