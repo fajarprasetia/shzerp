@@ -107,7 +107,7 @@ export async function generateTravelDocumentPDF(
     doc.setFont("helvetica", "bold");
     doc.text(translate('shipment.document.address', 'Alamat:'), pageWidth - 70, startY + 40);
     doc.setFont("helvetica", "normal");
-    doc.text(shipment.address ?? "-", pageWidth - 20, startY + 40, { align: "right" });
+    doc.text(shipment.address ?? "-", pageWidth - 20, startY + 44, { align: "right" });
 
     return startY + 48;
   }
@@ -147,113 +147,93 @@ export async function generateTravelDocumentPDF(
 
   chunks.forEach((items, pageIndex) => {
     // Calculate starting Y position for each invoice
-    // If it's the second invoice on the page, start at the middle
     currentY = pageIndex % 2 === 0 ? 0 : travelDocHeight;
-    
     let startY = addHeader(currentY);
     currentY = addTableHeader(startY);
-
-    // Track vertical line start position for this table section
     const sectionStartY = currentY;
     let sectionEndY = currentY;
-
     items.forEach((item) => {
-      let rowHeight = 10; // Default row height
-      
-      // Product column (Name) - Only show product type, not barcode or roll number
-      doc.setFontSize(9);  // Slightly larger font for product name
-      doc.text(item.productName || "-", 25, currentY + 5);
-      doc.setFontSize(8);  // Back to normal font size
-
-      // Specifications column - Format the specs in a consistent way
-      let specs = [];
-      
-      // Add all specifications in a consistent order
-      if (item.gsm) specs.push(`${item.gsm}g`);
-      if (item.width) specs.push(`${item.width}mm`);
-      if (item.length) specs.push(`${item.length}m`);
-      if (item.weight) specs.push(`${item.weight}kg`);
-      
-      // Show all specs with proper formatting
-      const specsText = specs.join(' × ');
-      doc.text(specsText || "-", 65, currentY + 5);
-
-      // SKU/Barcode column - Show all identifiers and barcodes organized neatly
-      let lineCount = 0;
-      
-      // Start with the identifier number (jumbo roll or divided roll number)
-      if (item.identifierNumber) {
-        // Use bold font for the main identifier
-        doc.setFont("helvetica", "bold");
-        doc.text(item.identifierNumber, 150, currentY + 5, { align: "center" });
-        doc.setFont("helvetica", "normal");
-        lineCount++;
-      }
-      
-      // Then add all barcodes if available, properly aligned
+      // Calculate all lines needed for SKU/Barcode
+      let barcodeLines: string[] = [];
+      if (item.identifierNumber) barcodeLines.push(item.identifierNumber);
       if (item.barcodes && item.barcodes.length > 0) {
-        // Calculate starting position based on whether we already showed an identifier
-        let startingY = currentY + 5 + (lineCount * 5);
-        
-        // If we have both identifier and barcodes, add a tiny bit of extra spacing
-        if (item.identifierNumber) {
-          startingY += 1;
-        }
-        
-        // Group barcodes if there are more than 3
-        if (item.barcodes.length > 3) {
-          // Show first barcode
-          doc.text(item.barcodes[0], 150, startingY, { align: "center" });
-          
-          // Show count of additional barcodes
-          doc.text(`+ ${item.barcodes.length - 1} more`, 150, startingY + 5, { align: "center" });
-          
-          lineCount += 2;
-        } else {
-          // Show all barcodes, each on its own line
-          for (let i = 0; i < item.barcodes.length; i++) {
-            doc.text(item.barcodes[i], 150, startingY + (i * 5), { align: "center" });
-            lineCount++;
-          }
-        }
+        barcodeLines = barcodeLines.concat(item.barcodes);
       } else if (!item.identifierNumber) {
-        // If we have neither identifier nor barcodes, show the fallback barcode
-        doc.text(item.barcode || "-", 150, currentY + 5, { align: "center" });
-        lineCount = 1;
+        barcodeLines.push(item.barcode || "-");
       }
-      
-      // Adjust row height based on how many lines we needed
-      rowHeight = Math.max(10, 5 + (lineCount * 5) + 2); // Add 2 for bottom padding
-
-      // Quantity column - Make font slightly larger and bold for better visibility
-      doc.setFont("helvetica", "bold");
-      doc.text(item.quantity.toString(), 177, currentY + 5);
-      doc.setFont("helvetica", "normal");
-      
-      // Add a horizontal line at the bottom of this row
-      doc.line(20, currentY + rowHeight, 190, currentY + rowHeight);
-      
-      // Move to next row
-      currentY += rowHeight;
-      sectionEndY = currentY;
-      
+      // Each barcode/identifier gets its own line
+      const linesPerPage = Math.floor((travelDocHeight - (currentY % travelDocHeight) - 40) / 6); // 6mm per line, 40mm for footer/signature
+      let lineIndex = 0;
+      let firstRow = true;
+      while (lineIndex < barcodeLines.length) {
+        // If not first row, start a new page/section
+        if (!firstRow) {
+          if ((currentY % travelDocHeight) + 40 + 6 > travelDocHeight) {
+            // Not enough space, add new page
+            doc.addPage();
+            currentY = 0;
+          } else {
+            // Move to next section (A5 half)
+            currentY = (currentY % travelDocHeight === 0) ? travelDocHeight : 0;
+          }
+          let headerY = addHeader(currentY);
+          currentY = addTableHeader(headerY);
+        }
+        // How many lines can we fit in this section?
+        const linesThisPage = Math.min(linesPerPage, barcodeLines.length - lineIndex);
+        let rowHeight = Math.max(10, 5 + (linesThisPage * 5) + 2);
+        // Product column
+        doc.setFontSize(9);
+        doc.text(item.productName || "-", 25, currentY + 5);
+        doc.setFontSize(8);
+        // Specifications column
+        let specs = [];
+        if (item.gsm) specs.push(`${item.gsm}g`);
+        if (item.width) specs.push(`${item.width}mm`);
+        if (item.length) specs.push(`${item.length}m`);
+        if (item.weight) specs.push(`${item.weight}kg`);
+        const specsText = specs.join(' × ');
+        doc.text(specsText || "-", 65, currentY + 5);
+        // SKU/Barcode column
+        let barcodeY = currentY + 5;
+        for (let i = 0; i < linesThisPage; i++) {
+          if (item.identifierNumber && lineIndex === 0 && i === 0) {
+            doc.setFont("helvetica", "bold");
+            doc.text(barcodeLines[lineIndex + i], 150, barcodeY, { align: "center" });
+            doc.setFont("helvetica", "normal");
+          } else {
+            doc.text(barcodeLines[lineIndex + i], 150, barcodeY, { align: "center" });
+          }
+          barcodeY += 5;
+        }
+        // Quantity column (only on first row for this item)
+        if (firstRow) {
+          doc.setFont("helvetica", "bold");
+          doc.text(item.quantity.toString(), 177, currentY + 5);
+          doc.setFont("helvetica", "normal");
+        }
+        // Row bottom line
+        doc.line(20, currentY + rowHeight, 190, currentY + rowHeight);
+        // Move to next row/section
+        currentY += rowHeight;
+        sectionEndY = currentY;
+        lineIndex += linesThisPage;
+        firstRow = false;
+      }
       totalQty += item.quantity;
     });
-    
-    // Now draw the vertical lines that span the entire section
-    doc.line(20, sectionStartY, 20, sectionEndY);  // Start
-    doc.line(60, sectionStartY, 60, sectionEndY);  // After Produk
-    doc.line(130, sectionStartY, 130, sectionEndY); // After Spesifikasi
-    doc.line(170, sectionStartY, 170, sectionEndY); // After SKU/Barcode
-    doc.line(190, sectionStartY, 190, sectionEndY); // End
-
-    // Add total quantity at the bottom with better formatting
+    // Draw vertical lines for this section
+    doc.line(20, sectionStartY, 20, sectionEndY);
+    doc.line(60, sectionStartY, 60, sectionEndY);
+    doc.line(130, sectionStartY, 130, sectionEndY);
+    doc.line(170, sectionStartY, 170, sectionEndY);
+    doc.line(190, sectionStartY, 190, sectionEndY);
+    // Add total quantity at the bottom
     doc.setFillColor(245, 245, 245);
     doc.rect(130, currentY + 5, 60, 10, "F");
     doc.setFont("helvetica", "bold");
     doc.text(translate('shipment.document.totalQuantity', 'Total Quantity:'), 140, currentY + 12);
     doc.text(totalQty.toString(), 177, currentY + 12);
-
     // Add shipping instructions
     currentY += 20;
     doc.setFont("helvetica", "bold");
@@ -261,24 +241,16 @@ export async function generateTravelDocumentPDF(
     doc.setFont("helvetica", "normal");
     doc.text(translate('shipment.document.instruction1', '1. Pastikan barang yang diterima sesuai dengan dokumen perjalanan ini.'), 20, currentY + 12);
     doc.text(translate('shipment.document.instruction2', '2. Periksa kondisi barang sebelum diterima untuk memastikan tidak ada kerusakan selama pengiriman.'), 20, currentY + 19);
-    
-    // Signature fields with better styling
+    // Signature fields
     currentY += 35;
-    
-    // Add signature boxes
-    doc.rect(25, currentY + 5, 50, 25);  // Signature box for receiver
-    doc.rect(125, currentY + 5, 50, 25); // Signature box for sender
-    
+    doc.rect(25, currentY + 5, 50, 25);
+    doc.rect(125, currentY + 5, 50, 25);
     doc.setFont("helvetica", "bold");
     doc.text(translate('shipment.document.receiver', 'Penerima'), 40, currentY);
     doc.text(translate('shipment.document.sender', 'Pengirim'), 140, currentY);
-    
-    // Add date lines below signature boxes
     doc.setFont("helvetica", "normal");
     doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 25, currentY + 40);
     doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 125, currentY + 40);
-    
-    // Add new page if there are more items and this isn't the last chunk
     if (pageIndex < chunks.length - 1 && pageIndex % 2 === 1) {
       doc.addPage();
     }

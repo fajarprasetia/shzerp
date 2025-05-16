@@ -194,7 +194,7 @@ export default function ShipmentHistoryPage() {
                           <TableCell className="font-medium">{shipment.id.substring(0, 8)}</TableCell>
                           <TableCell>{shipment.orderNo}</TableCell>
                           <TableCell>{shipment.customerName}</TableCell>
-                          <TableCell>{shipment.items?.length || 0}</TableCell>
+                          <TableCell>{Array.isArray(shipment.items) ? shipment.items.reduce((sum, item) => sum + (typeof item.quantity === 'number' ? item.quantity : 1), 0) : 0}</TableCell>
                           <TableCell>{shipment.processedBy?.name || t('common.unknown', 'Unknown')}</TableCell>
                           <TableCell>{formatDate(shipment.createdAt)}</TableCell>
                           <TableCell className="text-right">

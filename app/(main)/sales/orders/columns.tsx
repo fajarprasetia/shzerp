@@ -150,7 +150,14 @@ export function getColumns(
     {
       id: "itemCount",
       header: t('sales.orders.itemCount', 'Order Items'),
-      cell: ({ row }) => row.original.orderItems.length,
+      cell: ({ row }) => {
+        // Sum the quantity of all order items
+        const items = row.original.orderItems;
+        const totalQuantity = Array.isArray(items)
+          ? items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
+          : 0;
+        return totalQuantity;
+      },
     },
     {
       accessorKey: "discount",

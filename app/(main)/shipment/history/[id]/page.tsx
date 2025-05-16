@@ -377,8 +377,8 @@ export default function ShipmentDetailPage({ params }: { params: Promise<{ id: s
             
             <div className="mt-6 text-right space-y-2">
               <div className="flex justify-end">
-                <span className="font-medium mr-8">{t('sales.shipment.history.detail.totalItems', 'Total Items')}:</span>
-                <span>{shipment.items.reduce((sum, item) => sum + item.quantity, 0)}</span>
+                <span className="font-medium mr-8">{t('sales.shipment.history.detail.totalQuantity', 'Total Quantity')}:</span>
+                <span>{shipment.items.reduce((sum, item) => sum + (typeof item.quantity === 'number' ? item.quantity : 1), 0)}</span>
               </div>
             </div>
           </CardContent>

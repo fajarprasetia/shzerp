@@ -4,7 +4,7 @@ import { auth } from '@/auth';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Validate user session
@@ -15,7 +15,7 @@ export async function GET(
     }
     
     // Get shipment ID from params
-    const { id } = params;
+    const { id } = await params;
     
     if (!id) {
       return NextResponse.json({ error: 'Shipment ID is required' }, { status: 400 });

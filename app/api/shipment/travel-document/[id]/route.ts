@@ -6,7 +6,7 @@ import i18nInstance from '@/app/i18n';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Validate user session
@@ -16,7 +16,7 @@ export async function GET(
     }
     
     // Get shipment ID from params
-    const { id } = params;
+    const { id } = await params;
     
     if (!id) {
       return NextResponse.json({ error: "Shipment ID is required" }, { status: 400 });
@@ -102,7 +102,8 @@ export async function GET(
         width: orderItem.width ? Number(orderItem.width) : undefined,
         length: orderItem.length ? Number(orderItem.length) : undefined,
         weight: orderItem.weight ? Number(orderItem.weight) : undefined,
-        barcodes: scannedBarcodesMap[orderItem.id] || []
+        barcodes: scannedBarcodesMap[orderItem.id] || [],
+        barcode: ''
       };
       
       // Add jumbo roll details if present
@@ -151,7 +152,7 @@ export async function GET(
       createdAt: shipment.shipmentDate.toISOString(),
       processedBy: {
         id: shipment.shippedByUser.id,
-        name: shipment.shippedByUser.name
+        name: shipment.shippedByUser.name ?? '',
       }
     };
     

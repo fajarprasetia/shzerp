@@ -80,7 +80,7 @@ const OrdersToShipPage = () => {
     customer: order.customer.name,
     customerPhone: order.customer.phone,
     address: order.customer.address || t('sales.shipment.orders.noAddress', 'No address provided'),
-    items: order.orderItems.quantity,
+    items: Array.isArray(order.orderItems) ? order.orderItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) : 0,
     date: format(new Date(order.createdAt), 'MMM dd, yyyy'),
     action: (
       <Button
