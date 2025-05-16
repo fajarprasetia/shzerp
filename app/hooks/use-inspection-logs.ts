@@ -1,14 +1,16 @@
 import useSWR from "swr";
 
-interface LogEntry {
+export interface LogEntry {
   id: string;
-  type: "stock_created" | "divided_created" | "stock_inspected" | "divided_inspected";
+  type: "stock_created" | "divided_created" | "stock_inspected" | "divided_inspected" | 
+        "stock_remaining_length_changed" | "divided_width_changed" | "divided_length_changed";
   itemId: string;
   itemType: "stock" | "divided";
   itemIdentifier: string;
   userId: string | null;
   userName: string | null;
   createdAt: Date;
+  note?: string;
 }
 
 interface PaginatedResponse {
@@ -58,6 +60,7 @@ export function useInspectionLogs(options: UseInspectionLogsOptions = {}) {
 
   return {
     data: data?.data || [],
+    logs: data?.data || [],
     pagination: data?.pagination,
     isLoading: !data,
     isError: error,

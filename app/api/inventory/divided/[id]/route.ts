@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 
 export async function GET(
   request: Request,
@@ -95,6 +96,31 @@ export async function PUT(
       }),
     ]);
 
+    // Log the length change (real user if available)
+    let userId = "system";
+    let userName = "System";
+    try {
+      const session = await auth();
+      if (session?.user?.email) {
+        const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+        if (user) {
+          userId = user.id;
+          userName = user.name || "User";
+        }
+      }
+    } catch {}
+    await prisma.inspectionLog.create({
+      data: {
+        type: "divided_length_changed",
+        itemType: "divided",
+        itemIdentifier: divided.rollNo,
+        userId,
+        userName,
+        note: `Length changed from ${existingDivided.length} to ${data.length}`,
+        dividedId: id,
+      }
+    });
+
     return NextResponse.json(divided);
   } catch (error) {
     console.error("Error updating divided stock:", error);
@@ -173,6 +199,7 @@ export async function PATCH(
     }
 
     // Update only the width
+    const oldWidth = existingDivided.width;
     const updated = await prisma.divided.update({
       where: { id },
       data: {
@@ -186,6 +213,31 @@ export async function PATCH(
           },
         },
       },
+    });
+
+    // Log the width change (real user if available)
+    let userId = "system";
+    let userName = "System";
+    try {
+      const session = await auth();
+      if (session?.user?.email) {
+        const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+        if (user) {
+          userId = user.id;
+          userName = user.name || "User";
+        }
+      }
+    } catch {}
+    await prisma.inspectionLog.create({
+      data: {
+        type: "divided_width_changed",
+        itemType: "divided",
+        itemIdentifier: updated.rollNo,
+        userId,
+        userName,
+        note: `Width changed from ${oldWidth} to ${data.width}`,
+        dividedId: id,
+      }
     });
 
     return NextResponse.json(updated);

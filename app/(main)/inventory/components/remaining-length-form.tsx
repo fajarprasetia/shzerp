@@ -35,7 +35,7 @@ export function RemainingLengthForm({ stock, onSuccess, onCancel, inPopover = fa
     setIsSubmitting(true);
 
     try {
-      const res = await fetch(`/api/inventory/stock/${stock.id}`, {
+      const res = await fetch(`/api/inventory/stock/${stock.id}/remaining-length`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
