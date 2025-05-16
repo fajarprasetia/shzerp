@@ -141,17 +141,26 @@ export async function generateTravelDocumentPDF(
   }
 
   let currentY = 0;
-  
+  let currentHalf: 0 | 1 = 0; // 0 = top, 1 = bottom
+  let currentPage = 0;
   doc.setFont("helvetica", "normal");
   let totalQty = 0;
 
-  chunks.forEach((items, pageIndex) => {
-    // Calculate starting Y position for each invoice
-    currentY = pageIndex % 2 === 0 ? 0 : travelDocHeight;
+  function startNewHalf(half: 0 | 1) {
+    currentY = half === 0 ? 0 : travelDocHeight;
     let startY = addHeader(currentY);
     currentY = addTableHeader(startY);
-    const sectionStartY = currentY;
-    let sectionEndY = currentY;
+    return currentY;
+  }
+
+  // Start with the top half of the first page
+  currentY = startNewHalf(0);
+  currentHalf = 0;
+  currentPage = 0;
+  let sectionStartY = currentY;
+  let sectionEndY = currentY;
+
+  chunks.forEach((items, chunkIndex) => {
     items.forEach((item) => {
       // Calculate all lines needed for SKU/Barcode
       let barcodeLines: string[] = [];
@@ -162,25 +171,34 @@ export async function generateTravelDocumentPDF(
         barcodeLines.push(item.barcode || "-");
       }
       // Each barcode/identifier gets its own line
-      const linesPerPage = Math.floor((travelDocHeight - (currentY % travelDocHeight) - 40) / 6); // 6mm per line, 40mm for footer/signature
+      // Calculate available space in current half
+      let availableHeight = travelDocHeight - (currentY % travelDocHeight) - 40; // 40mm reserved for footer/signature
+      const linesPerPage = Math.floor(availableHeight / 6);
       let lineIndex = 0;
       let firstRow = true;
       while (lineIndex < barcodeLines.length) {
-        // If not first row, start a new page/section
-        if (!firstRow) {
-          if ((currentY % travelDocHeight) + 40 + 6 > travelDocHeight) {
-            // Not enough space, add new page
-            doc.addPage();
-            currentY = 0;
+        // If not first row, or not enough space, start a new half
+        if (!firstRow || (currentY + 12 + (barcodeLines.length - lineIndex) * 6 + 40 > (currentHalf === 0 ? travelDocHeight : travelDocHeight * 2))) {
+          // Draw vertical lines for the previous section
+          doc.line(20, sectionStartY, 20, sectionEndY);
+          doc.line(60, sectionStartY, 60, sectionEndY);
+          doc.line(130, sectionStartY, 130, sectionEndY);
+          doc.line(170, sectionStartY, 170, sectionEndY);
+          doc.line(190, sectionStartY, 190, sectionEndY);
+          // Switch to next half or new page
+          if (currentHalf === 0) {
+            currentHalf = 1;
           } else {
-            // Move to next section (A5 half)
-            currentY = (currentY % travelDocHeight === 0) ? travelDocHeight : 0;
+            doc.addPage();
+            currentHalf = 0;
+            currentPage++;
           }
-          let headerY = addHeader(currentY);
-          currentY = addTableHeader(headerY);
+          currentY = startNewHalf(currentHalf);
+          sectionStartY = currentY;
         }
-        // How many lines can we fit in this section?
-        const linesThisPage = Math.min(linesPerPage, barcodeLines.length - lineIndex);
+        // How many lines can we fit in this half?
+        availableHeight = travelDocHeight - (currentY % travelDocHeight) - 40;
+        const linesThisPage = Math.min(Math.floor(availableHeight / 6), barcodeLines.length - lineIndex);
         let rowHeight = Math.max(10, 5 + (linesThisPage * 5) + 2);
         // Product column
         doc.setFontSize(9);
@@ -222,7 +240,7 @@ export async function generateTravelDocumentPDF(
       }
       totalQty += item.quantity;
     });
-    // Draw vertical lines for this section
+    // Draw vertical lines for this section (after all items in chunk)
     doc.line(20, sectionStartY, 20, sectionEndY);
     doc.line(60, sectionStartY, 60, sectionEndY);
     doc.line(130, sectionStartY, 130, sectionEndY);
@@ -251,8 +269,18 @@ export async function generateTravelDocumentPDF(
     doc.setFont("helvetica", "normal");
     doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 25, currentY + 40);
     doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 125, currentY + 40);
-    if (pageIndex < chunks.length - 1 && pageIndex % 2 === 1) {
-      doc.addPage();
+    // Prepare for next chunk: if not last, move to next half or page
+    if (chunkIndex < chunks.length - 1) {
+      if (currentHalf === 0) {
+        currentHalf = 1;
+        currentY = startNewHalf(1);
+        sectionStartY = currentY;
+      } else {
+        doc.addPage();
+        currentHalf = 0;
+        currentY = startNewHalf(0);
+        sectionStartY = currentY;
+      }
     }
   });
 

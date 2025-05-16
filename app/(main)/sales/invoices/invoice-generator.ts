@@ -308,26 +308,30 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
   });
 
   let currentY = 0;
-  
+  let currentHalf: 0 | 1 = 0; // 0 = top, 1 = bottom
+  let currentPage = 0;
   doc.setFont("helvetica", "normal");
   let totalQty = 0;
   let totalTax = 0;
 
-  chunks.forEach((items, pageIndex) => {
-    console.log(`Processing chunk ${pageIndex + 1} of ${chunks.length}`);
-    
-    // Calculate starting Y position for each invoice
-    // If it's the second invoice on the page, start at the middle
-    currentY = pageIndex % 2 === 0 ? 0 : invoiceHeight;
-    
+  function startNewHalf(half: 0 | 1) {
+    currentY = half === 0 ? 0 : invoiceHeight;
     let startY = addHeader(currentY, doc, order, customer, pageWidth);
     let tableInfo = addTableHeader(startY, doc, pageWidth);
     currentY = tableInfo.nextY;
-    const colPos = tableInfo.columnPositions; // Get the column positions
-    const colWidths = tableInfo.columnWidths;  // Get the column widths
+    return tableInfo;
+  }
 
+  // Start with the top half of the first page
+  let tableInfo = startNewHalf(0);
+  currentHalf = 0;
+  currentPage = 0;
+  let colPos = tableInfo.columnPositions;
+  let colWidths = tableInfo.columnWidths;
+
+  chunks.forEach((items, chunkIndex) => {
     items.forEach((item, itemIndex) => {
-      console.log(`Processing item ${itemIndex + 1} in chunk ${pageIndex + 1}:`, {
+      console.log(`Processing item ${itemIndex + 1} in chunk ${chunkIndex + 1}:`, {
         type: item.type,
         product: item.product,
         gsm: item.gsm,
@@ -417,71 +421,104 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
       currentY += itemHeight;
       totalQty += item.quantity || 0;
       totalTax += (item.price * (item.quantity || 1) * (item.tax / 100));
+
+      // If not enough space for next row, switch to next half or page
+      if (currentY + itemHeight + 60 > (currentHalf === 0 ? invoiceHeight : invoiceHeight * 2)) {
+        // Add totals and signature for this half before switching
+        let subtotal = 0;
+        items.forEach((item) => {
+          subtotal += calculateItemTotal(item);
+        });
+        currentY += itemHeight;
+        doc.setFont("helvetica", "bold");
+        const totalLabelX = colPos[4];
+        const totalValueX = colPos[5] + colWidths[5] - 2;
+        doc.text("Subtotal:", totalLabelX, currentY + 5);
+        doc.text(formatCurrency(subtotal).replace("Rp", "").trim(), totalValueX, currentY + 5, { align: "right" });
+        currentY += itemHeight;
+        doc.text("Diskon:", totalLabelX, currentY + 5);
+        doc.text(formatCurrency(order.totalAmount - subtotal).replace("Rp", "").trim(), totalValueX, currentY + 5, { align: "right" });
+        currentY += itemHeight;
+        doc.setFontSize(11);
+        doc.setFillColor(245, 245, 245);
+        doc.rect(totalLabelX - 10, currentY, colPos[colPos.length-1] - totalLabelX + 10, 8, 'F');
+        doc.setFont("helvetica", "bold");
+        doc.text("Total:", totalLabelX, currentY + 5);
+        const formattedTotal = formatCurrency(order.totalAmount);
+        doc.text(formattedTotal, totalValueX, currentY + 5, { align: "right" });
+        doc.setFontSize(8);
+        const warrantyY = currentY + 45;
+        doc.setFont("helvetica", "bold");
+        doc.text("PERHATIAN SYARAT KLAIM GARANSI:", pageWidth / 2, warrantyY, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.text("1. Klaim atas jumlah dan kondisi barang yang diterima tidak melebihi 1x24 jam terhitung sejak penerimaan barang.", pageWidth / 2, warrantyY + 5, { align: "center" });
+        doc.text("2. Klaim atas kualitas produk harus disertai dengan invoice dan artikel yang memuat informasi produk dan produk yang dimaksud.", pageWidth / 2, warrantyY + 10, { align: "center" });
+        const signatureY = currentY + 60;
+        doc.text("Penerima", 50, signatureY);
+        doc.text("Pengirim", 160, signatureY);
+        // Switch to next half or page
+        if (currentHalf === 0) {
+          currentHalf = 1;
+          tableInfo = startNewHalf(1);
+          colPos = tableInfo.columnPositions;
+          colWidths = tableInfo.columnWidths;
+        } else {
+          doc.addPage();
+          currentHalf = 0;
+          tableInfo = startNewHalf(0);
+          colPos = tableInfo.columnPositions;
+          colWidths = tableInfo.columnWidths;
+        }
+      }
     });
 
-    // Calculate subtotal as the sum of item totals (including tax)
+    // Add totals and warranty info for each invoice section (if not already added)
     let subtotal = 0;
-    items.forEach((item, itemIndex) => {
-      const itemTotal = calculateItemTotal(item);
-      subtotal += itemTotal;
+    items.forEach((item) => {
+      subtotal += calculateItemTotal(item);
     });
-
-    // Add totals and warranty info for each invoice section
     currentY += itemHeight;
     doc.setFont("helvetica", "bold");
-    // Position totals better with the new column layout
     const totalLabelX = colPos[4];
     const totalValueX = colPos[5] + colWidths[5] - 2;
-    
     doc.text("Subtotal:", totalLabelX, currentY + 5);
     doc.text(formatCurrency(subtotal).replace("Rp", "").trim(), totalValueX, currentY + 5, { align: "right" });
-    
-    // Only show Diskon if discount > 0
     currentY += itemHeight;
     doc.text("Diskon:", totalLabelX, currentY + 5);
     doc.text(formatCurrency(order.totalAmount - subtotal).replace("Rp", "").trim(), totalValueX, currentY + 5, { align: "right" });
-    
-    // Make Total row larger and more prominent
     currentY += itemHeight;
-    // Increase font size for better visibility
     doc.setFontSize(11);
-    // Draw a background rectangle for emphasis
-    doc.setFillColor(245, 245, 245); // Light gray background
-    // Rectangle coordinates: x, y, width, height
+    doc.setFillColor(245, 245, 245);
     doc.rect(totalLabelX - 10, currentY, colPos[colPos.length-1] - totalLabelX + 10, 8, 'F');
-    // Set bold font for total
     doc.setFont("helvetica", "bold");
     doc.text("Total:", totalLabelX, currentY + 5);
-    // Format value with Rp prefix and make sure it's not trimmed
     const formattedTotal = formatCurrency(order.totalAmount);
     doc.text(formattedTotal, totalValueX, currentY + 5, { align: "right" });
-    // Reset font size to normal
     doc.setFontSize(8);
-
-    console.log('Added totals:', {
-      position: { y: currentY + 5 },
-      total: formatCurrency(order.totalAmount)
-    });
-
-    // Add warranty information at fixed position from current section bottom
     const warrantyY = currentY + 45;
     doc.setFont("helvetica", "bold");
     doc.text("PERHATIAN SYARAT KLAIM GARANSI:", pageWidth / 2, warrantyY, { align: "center" });
     doc.setFont("helvetica", "normal");
     doc.text("1. Klaim atas jumlah dan kondisi barang yang diterima tidak melebihi 1x24 jam terhitung sejak penerimaan barang.", pageWidth / 2, warrantyY + 5, { align: "center" });
     doc.text("2. Klaim atas kualitas produk harus disertai dengan invoice dan artikel yang memuat informasi produk dan produk yang dimaksud.", pageWidth / 2, warrantyY + 10, { align: "center" });
-
-    // Add signature lines at the bottom of current section
     const signatureY = currentY + 60;
     doc.text("Penerima", 50, signatureY);
     doc.text("Pengirim", 160, signatureY);
 
-    console.log(`Completed chunk ${pageIndex + 1}, currentY: ${currentY}`);
-
-    // Add new page if we have more items and we're at the bottom section
-    if (pageIndex < chunks.length - 1 && pageIndex % 2 === 1) {
-      console.log('Adding new page');
-      doc.addPage();
+    // Prepare for next chunk: if not last, move to next half or page
+    if (chunkIndex < chunks.length - 1) {
+      if (currentHalf === 0) {
+        currentHalf = 1;
+        tableInfo = startNewHalf(1);
+        colPos = tableInfo.columnPositions;
+        colWidths = tableInfo.columnWidths;
+      } else {
+        doc.addPage();
+        currentHalf = 0;
+        tableInfo = startNewHalf(0);
+        colPos = tableInfo.columnPositions;
+        colWidths = tableInfo.columnWidths;
+      }
     }
   });
 
