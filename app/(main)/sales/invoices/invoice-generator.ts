@@ -227,12 +227,19 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
     const customer = await fetchCustomer(order.customerId);
     console.log('Fetched customer data:', customer);
 
-    // Initialize PDF with A4 size in portrait orientation
+    // Initialize PDF with forced dimensions (width: 210mm, height: 148mm)
+    // Create with default A4
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: "a4"  // A4 size (210 x 297 mm)
+      format: "a4"
     });
+    // Then override the internal page size
+    Object.defineProperty(doc.internal.pageSize, 'width', { get: () => 210 });
+    Object.defineProperty(doc.internal.pageSize, 'height', { get: () => 148 });
+    // Force the page dimensions directly
+    (doc.internal as any).pageSize.width = 210;
+    (doc.internal as any).pageSize.height = 148;
 
     const pageWidth = 210;  // A4 width
     
@@ -282,15 +289,22 @@ export async function generateInvoicePDF(order: Order): Promise<ArrayBuffer> {
   const customer = await fetchCustomer(order.customerId);
   console.log('Fetched customer data:', customer);
 
-  // Initialize PDF with A4 size in portrait orientation
+  // Initialize PDF with forced dimensions (width: 210mm, height: 148mm)
+  // Create with default A4
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
-    format: "a4"  // A4 size (210 x 297 mm)
+    format: "a4"
   });
+  // Then override the internal page size
+  Object.defineProperty(doc.internal.pageSize, 'width', { get: () => 210 });
+  Object.defineProperty(doc.internal.pageSize, 'height', { get: () => 148 });
+  // Force the page dimensions directly
+  (doc.internal as any).pageSize.width = 210;
+  (doc.internal as any).pageSize.height = 148;
 
   const pageWidth = 210;  // A4 width
-  const pageHeight = 297; // A4 height
+  const pageHeight = 148; // A4 height
   const invoiceHeight = 148; // A5 height
   const maxItemsPerPage = 5;
   const itemHeight = 6;

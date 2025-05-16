@@ -53,15 +53,22 @@ export async function generateTravelDocumentPDF(
   // If no translation function is provided, use a fallback that just returns the fallback text
   const translate = t || ((key: string, fallback: string) => fallback);
   
-  // Initialize PDF with A4 size in portrait orientation
+  // Initialize PDF with forced dimensions (width: 210mm, height: 148mm)
+  // Create with default A4
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
-    format: "a4"  // A4 size (210 x 297 mm)
+    format: "a4"
   });
+  // Then override the internal page size
+  Object.defineProperty(doc.internal.pageSize, 'width', { get: () => 210 });
+  Object.defineProperty(doc.internal.pageSize, 'height', { get: () => 148 });
+  // Force the page dimensions directly
+  (doc.internal as any).pageSize.width = 210;
+  (doc.internal as any).pageSize.height = 148;
 
   const pageWidth = 210;  // A4 width
-  const pageHeight = 297; // A4 height
+  const pageHeight = 148; // A4 height
   const travelDocHeight = 148; // A5 height
   const maxItemsPerPage = 10; // More items per page since we don't have price columns
   const itemHeight = 6;
@@ -258,6 +265,7 @@ export async function generateTravelDocumentPDF(
       }
       totalQty += item.quantity;
     });
+    
     // Draw vertical lines for this section (after all items in chunk)
     if (hasRowsInSection) {
       doc.line(20, sectionStartY, 20, sectionEndY);
@@ -265,27 +273,32 @@ export async function generateTravelDocumentPDF(
       doc.line(130, sectionStartY, 130, sectionEndY);
       doc.line(170, sectionStartY, 170, sectionEndY);
       doc.line(190, sectionStartY, 190, sectionEndY);
+      
       // Add total quantity at the bottom
-    doc.setFillColor(245, 245, 245);
-    doc.rect(130, currentY + 5, 60, 10, "F");
-    doc.setFont("helvetica", "bold");
-    doc.text(translate('shipment.document.totalQuantity', 'Total Quantity:'), 140, currentY + 12);
-    doc.text(totalQty.toString(), 177, currentY + 12);
-      // Before adding shipping instructions and signature, check if enough space, else move to next half/page
-      const neededSpace = 20 + 35 + 45; // 20 for instructions, 35 for signature, 45 for signature lines
-      if (currentY + neededSpace > (currentHalf === 0 ? travelDocHeight : travelDocHeight * 2)) {
-        // Move to next half or page
-        if (currentHalf === 0) {
-          currentHalf = 1;
-          currentY = startNewHalf(1);
-          sectionStartY = currentY;
-        } else {
-          doc.addPage();
-          currentHalf = 0;
-          currentY = startNewHalf(0);
-          sectionStartY = currentY;
-        }
+      doc.setFillColor(245, 245, 245);
+      doc.rect(130, currentY + 5, 60, 10, "F");
+      doc.setFont("helvetica", "bold");
+      doc.text(translate('shipment.document.totalQuantity', 'Total Quantity:'), 140, currentY + 12);
+      doc.text(totalQty.toString(), 177, currentY + 12);
+    }
+    
+    // Always add footer (regardless of whether there were items)
+    // Check if enough space for footer
+    const neededSpace = 20 + 35 + 45; // 20 for instructions, 35 for signature, 45 for signature lines
+    if (currentY + neededSpace > (currentHalf === 0 ? travelDocHeight : travelDocHeight * 2)) {
+      // Move to next half or page if not enough space
+      if (currentHalf === 0) {
+        currentHalf = 1;
+        currentY = startNewHalf(1);
+        sectionStartY = currentY;
+      } else {
+        doc.addPage();
+        currentHalf = 0;
+        currentY = startNewHalf(0);
+        sectionStartY = currentY;
       }
+    }
+    
     // Add shipping instructions
     currentY += 20;
     doc.setFont("helvetica", "bold");
@@ -293,17 +306,18 @@ export async function generateTravelDocumentPDF(
     doc.setFont("helvetica", "normal");
     doc.text(translate('shipment.document.instruction1', '1. Pastikan barang yang diterima sesuai dengan dokumen perjalanan ini.'), 20, currentY + 12);
     doc.text(translate('shipment.document.instruction2', '2. Periksa kondisi barang sebelum diterima untuk memastikan tidak ada kerusakan selama pengiriman.'), 20, currentY + 19);
-      // Signature fields
+    
+    // Signature fields
     currentY += 35;
-      doc.rect(25, currentY + 5, 50, 25);
-      doc.rect(125, currentY + 5, 50, 25);
+    doc.rect(25, currentY + 5, 50, 25);
+    doc.rect(125, currentY + 5, 50, 25);
     doc.setFont("helvetica", "bold");
     doc.text(translate('shipment.document.receiver', 'Penerima'), 40, currentY);
     doc.text(translate('shipment.document.sender', 'Pengirim'), 140, currentY);
     doc.setFont("helvetica", "normal");
     doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 25, currentY + 40);
     doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 125, currentY + 40);
-    }
+    
     // Prepare for next chunk: if not last, move to next half or page
     if (chunkIndex < chunks.length - 1) {
       if (currentHalf === 0) {
@@ -311,7 +325,7 @@ export async function generateTravelDocumentPDF(
         currentY = startNewHalf(1);
         sectionStartY = currentY;
       } else {
-      doc.addPage();
+        doc.addPage();
         currentHalf = 0;
         currentY = startNewHalf(0);
         sectionStartY = currentY;
