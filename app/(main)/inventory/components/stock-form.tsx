@@ -48,6 +48,7 @@ export interface StockFormProps {
 export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [useBackCamera, setUseBackCamera] = useState(true);
+  const [isValidatingBarcode, setIsValidatingBarcode] = useState(false);
   const [formData, setFormData] = useState({
     jumboRollNo: initialData?.jumboRollNo || "",
     barcodeId: initialData?.barcodeId || "",
@@ -106,6 +107,36 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const validateBarcode = async (barcodeId: string): Promise<boolean> => {
+    try {
+      setIsValidatingBarcode(true);
+      
+      // Skip validation if editing existing stock with the same barcode
+      if (initialData && initialData.barcodeId === barcodeId) {
+        return true;
+      }
+      
+      const response = await fetch(`/api/inventory/stock/validate?barcodeId=${encodeURIComponent(barcodeId)}`);
+      
+      if (!response.ok) {
+        throw new Error(t('inventory.stock.validationError', 'Failed to validate barcode'));
+      }
+      
+      const data = await response.json();
+      return !data.exists;
+    } catch (error) {
+      console.error("Error validating barcode:", error);
+      toast({
+        title: t('common.error', 'Error'),
+        description: t('inventory.stock.barcodeValidationError', 'Failed to validate barcode. Please try again.'),
+        variant: "destructive"
+      });
+      return false;
+    } finally {
+      setIsValidatingBarcode(false);
+    }
+  };
+
   const handleScan = async () => {
     try {
       setIsScanning(true);
@@ -133,14 +164,26 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
       
       if (result.success && result.data) {
         const scannedData: string = result.data!;
-        setFormData(prev => ({ 
-          ...prev, 
-          barcodeId: scannedData
-        }));
-        toast({
-          title: t('common.success', 'Success'),
-          description: t('inventory.stock.barcodeScanned', 'Barcode scanned successfully!'),
-        });
+        
+        // Validate the barcode is not a duplicate
+        const isValidBarcode = await validateBarcode(scannedData);
+        
+        if (isValidBarcode) {
+          setFormData(prev => ({ 
+            ...prev, 
+            barcodeId: scannedData
+          }));
+          toast({
+            title: t('common.success', 'Success'),
+            description: t('inventory.stock.barcodeScanned', 'Barcode scanned successfully!'),
+          });
+        } else {
+          toast({
+            title: t('inventory.stock.duplicateBarcode', 'Duplicate Barcode'),
+            description: t('inventory.stock.duplicateBarcodeMessage', 'This barcode is already in use. Please scan a different barcode.'),
+            variant: "destructive"
+          });
+        }
       } else if (result.error) {
         // More descriptive error handling
         let errorMessage = result.error;
@@ -192,6 +235,18 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
     }
     
     try {
+      // Validate the barcode is not a duplicate before submitting
+      const isValidBarcode = await validateBarcode(formData.barcodeId);
+      
+      if (!isValidBarcode) {
+        toast({
+          title: t('inventory.stock.duplicateBarcode', 'Duplicate Barcode'),
+          description: t('inventory.stock.duplicateBarcodeMessage', 'This barcode is already in use. Please scan a different barcode.'),
+          variant: "destructive"
+        });
+        return;
+      }
+      
       // Convert numeric values and ensure they're valid numbers
       const processedData = {
         ...formData,
@@ -284,9 +339,9 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
                   size="icon"
                   onClick={handleScan}
                   className="ml-2"
-                  disabled={isScanning}
+                  disabled={isScanning || isValidatingBarcode}
                 >
-                  {isScanning ? (
+                  {isScanning || isValidatingBarcode ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Camera className="h-4 w-4" />
@@ -415,7 +470,7 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
           >
             {t('common.cancel', 'Cancel')}
           </Button>
-          <Button type="submit">
+          <Button type="submit" disabled={isValidatingBarcode}>
             {initialData ? t('common.save', 'Save') : t('common.create', 'Create')}
           </Button>
         </div>

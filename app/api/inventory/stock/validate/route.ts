@@ -1,71 +1,33 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/app/lib/prisma';
 
-export async function GET(req: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const barcode = searchParams.get("barcode") || searchParams.get("barcodeId");
+    const { searchParams } = new URL(request.url);
+    const barcodeId = searchParams.get('barcodeId');
 
-    if (!barcode) {
+    if (!barcodeId) {
       return NextResponse.json(
-        { error: "Barcode is required", success: false },
+        { error: 'Barcode ID is required' },
         { status: 400 }
       );
     }
 
-    const stock = await prisma.stock.findUnique({
-      where: { barcodeId: barcode },
-      include: {
-        inspectedBy: {
-          select: {
-            name: true
-          }
-        }
+    // Check if the barcode already exists in the database
+    const existingStock = await prisma.stock.findFirst({
+      where: {
+        barcodeId: barcodeId
       }
     });
 
-    if (!stock) {
-      return NextResponse.json(
-        { error: "Stock not found with the provided barcode", success: false },
-        { status: 404 }
-      );
-    }
-
-    // Check if the stock has been inspected
-    if (!stock.inspected) {
-      return NextResponse.json(
-        { 
-          error: "This stock has not been inspected yet", 
-          stock,
-          success: false 
-        },
-        { status: 400 }
-      );
-    }
-
-    // Check if stock has enough remaining length
-    if (stock.remainingLength <= 0) {
-      return NextResponse.json(
-        { 
-          error: "This stock has no remaining length available", 
-          stock,
-          success: false 
-        },
-        { status: 400 }
-      );
-    }
-
     return NextResponse.json({
-      ...stock,
-      success: true
+      exists: !!existingStock,
+      stockId: existingStock?.id || null
     });
   } catch (error) {
-    console.error('Error validating stock:', error);
+    console.error('Error validating barcode:', error);
     return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'Failed to validate stock', 
-        success: false 
-      },
+      { error: 'Failed to validate barcode' },
       { status: 500 }
     );
   }
