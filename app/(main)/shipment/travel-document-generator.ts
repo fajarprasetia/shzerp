@@ -140,9 +140,12 @@ export async function generateTravelDocumentPDF(
     return startY + 8;  // Return adjusted position
   }
 
-  let currentY = 0;
-  let currentHalf: 0 | 1 = 0; // 0 = top, 1 = bottom
   let currentPage = 0;
+  let currentHalf: 0 | 1 = 0;
+  let currentY = 0;
+  let sectionStartY = 0;
+  let sectionEndY = 0;
+  let started = false;
   doc.setFont("helvetica", "normal");
   let totalQty = 0;
 
@@ -153,14 +156,15 @@ export async function generateTravelDocumentPDF(
     return currentY;
   }
 
-  // Start with the top half of the first page
-  currentY = startNewHalf(0);
-  currentHalf = 0;
-  currentPage = 0;
-  let sectionStartY = currentY;
-  let sectionEndY = currentY;
-
   chunks.forEach((items, chunkIndex) => {
+    // Start a new half if not started yet
+    if (!started) {
+      currentY = startNewHalf(0);
+      currentHalf = 0;
+      currentPage = 0;
+      sectionStartY = currentY;
+      started = true;
+    }
     items.forEach((item) => {
       // Calculate all lines needed for SKU/Barcode
       let barcodeLines: string[] = [];
@@ -252,6 +256,21 @@ export async function generateTravelDocumentPDF(
     doc.setFont("helvetica", "bold");
     doc.text(translate('shipment.document.totalQuantity', 'Total Quantity:'), 140, currentY + 12);
     doc.text(totalQty.toString(), 177, currentY + 12);
+    // Before adding shipping instructions and signature, check if enough space, else move to next half/page
+    const neededSpace = 20 + 35 + 45; // 20 for instructions, 35 for signature, 45 for signature lines
+    if (currentY + neededSpace > (currentHalf === 0 ? travelDocHeight : travelDocHeight * 2)) {
+      // Move to next half or page
+      if (currentHalf === 0) {
+        currentHalf = 1;
+        currentY = startNewHalf(1);
+        sectionStartY = currentY;
+      } else {
+        doc.addPage();
+        currentHalf = 0;
+        currentY = startNewHalf(0);
+        sectionStartY = currentY;
+      }
+    }
     // Add shipping instructions
     currentY += 20;
     doc.setFont("helvetica", "bold");
