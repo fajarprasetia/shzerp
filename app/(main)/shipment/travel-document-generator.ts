@@ -165,6 +165,8 @@ export async function generateTravelDocumentPDF(
       sectionStartY = currentY;
       started = true;
     }
+    let hasRowsInSection = false;
+    let tableHeaderAdded = false;
     items.forEach((item) => {
       // Calculate all lines needed for SKU/Barcode
       let barcodeLines: string[] = [];
@@ -183,12 +185,14 @@ export async function generateTravelDocumentPDF(
       while (lineIndex < barcodeLines.length) {
         // If not first row, or not enough space, start a new half
         if (!firstRow || (currentY + 12 + (barcodeLines.length - lineIndex) * 6 + 40 > (currentHalf === 0 ? travelDocHeight : travelDocHeight * 2))) {
-          // Draw vertical lines for the previous section
-          doc.line(20, sectionStartY, 20, sectionEndY);
-          doc.line(60, sectionStartY, 60, sectionEndY);
-          doc.line(130, sectionStartY, 130, sectionEndY);
-          doc.line(170, sectionStartY, 170, sectionEndY);
-          doc.line(190, sectionStartY, 190, sectionEndY);
+          // Draw vertical lines for the previous section only if there were rows
+          if (hasRowsInSection) {
+            doc.line(20, sectionStartY, 20, sectionEndY);
+            doc.line(60, sectionStartY, 60, sectionEndY);
+            doc.line(130, sectionStartY, 130, sectionEndY);
+            doc.line(170, sectionStartY, 170, sectionEndY);
+            doc.line(190, sectionStartY, 190, sectionEndY);
+          }
           // Switch to next half or new page
           if (currentHalf === 0) {
             currentHalf = 1;
@@ -198,14 +202,16 @@ export async function generateTravelDocumentPDF(
             currentPage++;
           }
           currentY = startNewHalf(currentHalf);
-          // Only add table header if there are items to show
-          currentY = addTableHeader(currentY);
+          // Reset flags for new half
+          hasRowsInSection = false;
+          tableHeaderAdded = false;
           sectionStartY = currentY;
         }
         // If this is the first row in a new half, add the table header
-        if (firstRow && (currentY === (currentHalf === 0 ? 0 : travelDocHeight) + 48)) {
+        if (!tableHeaderAdded) {
           currentY = addTableHeader(currentY);
           sectionStartY = currentY;
+          tableHeaderAdded = true;
         }
         // How many lines can we fit in this half?
         availableHeight = travelDocHeight - (currentY % travelDocHeight) - 40;
@@ -248,53 +254,56 @@ export async function generateTravelDocumentPDF(
         sectionEndY = currentY;
         lineIndex += linesThisPage;
         firstRow = false;
+        hasRowsInSection = true;
       }
       totalQty += item.quantity;
     });
     // Draw vertical lines for this section (after all items in chunk)
-    doc.line(20, sectionStartY, 20, sectionEndY);
-    doc.line(60, sectionStartY, 60, sectionEndY);
-    doc.line(130, sectionStartY, 130, sectionEndY);
-    doc.line(170, sectionStartY, 170, sectionEndY);
-    doc.line(190, sectionStartY, 190, sectionEndY);
-    // Add total quantity at the bottom
-    doc.setFillColor(245, 245, 245);
-    doc.rect(130, currentY + 5, 60, 10, "F");
-    doc.setFont("helvetica", "bold");
-    doc.text(translate('shipment.document.totalQuantity', 'Total Quantity:'), 140, currentY + 12);
-    doc.text(totalQty.toString(), 177, currentY + 12);
-    // Before adding shipping instructions and signature, check if enough space, else move to next half/page
-    const neededSpace = 20 + 35 + 45; // 20 for instructions, 35 for signature, 45 for signature lines
-    if (currentY + neededSpace > (currentHalf === 0 ? travelDocHeight : travelDocHeight * 2)) {
-      // Move to next half or page
-      if (currentHalf === 0) {
-        currentHalf = 1;
-        currentY = startNewHalf(1);
-        sectionStartY = currentY;
-      } else {
-        doc.addPage();
-        currentHalf = 0;
-        currentY = startNewHalf(0);
-        sectionStartY = currentY;
+    if (hasRowsInSection) {
+      doc.line(20, sectionStartY, 20, sectionEndY);
+      doc.line(60, sectionStartY, 60, sectionEndY);
+      doc.line(130, sectionStartY, 130, sectionEndY);
+      doc.line(170, sectionStartY, 170, sectionEndY);
+      doc.line(190, sectionStartY, 190, sectionEndY);
+      // Add total quantity at the bottom
+      doc.setFillColor(245, 245, 245);
+      doc.rect(130, currentY + 5, 60, 10, "F");
+      doc.setFont("helvetica", "bold");
+      doc.text(translate('shipment.document.totalQuantity', 'Total Quantity:'), 140, currentY + 12);
+      doc.text(totalQty.toString(), 177, currentY + 12);
+      // Before adding shipping instructions and signature, check if enough space, else move to next half/page
+      const neededSpace = 20 + 35 + 45; // 20 for instructions, 35 for signature, 45 for signature lines
+      if (currentY + neededSpace > (currentHalf === 0 ? travelDocHeight : travelDocHeight * 2)) {
+        // Move to next half or page
+        if (currentHalf === 0) {
+          currentHalf = 1;
+          currentY = startNewHalf(1);
+          sectionStartY = currentY;
+        } else {
+          doc.addPage();
+          currentHalf = 0;
+          currentY = startNewHalf(0);
+          sectionStartY = currentY;
+        }
       }
+      // Add shipping instructions
+      currentY += 20;
+      doc.setFont("helvetica", "bold");
+      doc.text(translate('shipment.document.shippingInstructions', 'PETUNJUK PENGIRIMAN:'), 20, currentY + 5);
+      doc.setFont("helvetica", "normal");
+      doc.text(translate('shipment.document.instruction1', '1. Pastikan barang yang diterima sesuai dengan dokumen perjalanan ini.'), 20, currentY + 12);
+      doc.text(translate('shipment.document.instruction2', '2. Periksa kondisi barang sebelum diterima untuk memastikan tidak ada kerusakan selama pengiriman.'), 20, currentY + 19);
+      // Signature fields
+      currentY += 35;
+      doc.rect(25, currentY + 5, 50, 25);
+      doc.rect(125, currentY + 5, 50, 25);
+      doc.setFont("helvetica", "bold");
+      doc.text(translate('shipment.document.receiver', 'Penerima'), 40, currentY);
+      doc.text(translate('shipment.document.sender', 'Pengirim'), 140, currentY);
+      doc.setFont("helvetica", "normal");
+      doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 25, currentY + 40);
+      doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 125, currentY + 40);
     }
-    // Add shipping instructions
-    currentY += 20;
-    doc.setFont("helvetica", "bold");
-    doc.text(translate('shipment.document.shippingInstructions', 'PETUNJUK PENGIRIMAN:'), 20, currentY + 5);
-    doc.setFont("helvetica", "normal");
-    doc.text(translate('shipment.document.instruction1', '1. Pastikan barang yang diterima sesuai dengan dokumen perjalanan ini.'), 20, currentY + 12);
-    doc.text(translate('shipment.document.instruction2', '2. Periksa kondisi barang sebelum diterima untuk memastikan tidak ada kerusakan selama pengiriman.'), 20, currentY + 19);
-    // Signature fields
-    currentY += 35;
-    doc.rect(25, currentY + 5, 50, 25);
-    doc.rect(125, currentY + 5, 50, 25);
-    doc.setFont("helvetica", "bold");
-    doc.text(translate('shipment.document.receiver', 'Penerima'), 40, currentY);
-    doc.text(translate('shipment.document.sender', 'Pengirim'), 140, currentY);
-    doc.setFont("helvetica", "normal");
-    doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 25, currentY + 40);
-    doc.text(translate('shipment.document.date', 'Tanggal') + ': ________________', 125, currentY + 40);
     // Prepare for next chunk: if not last, move to next half or page
     if (chunkIndex < chunks.length - 1) {
       if (currentHalf === 0) {
