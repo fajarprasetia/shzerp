@@ -610,6 +610,49 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
         return;
       }
 
+      // Validate that the scanned item's specifications match the ordered item
+      const matchedOrderItem = order.orderItems.find(item => item.id === result.item.id);
+      
+      // Enhanced validation for GSM, width, and length
+      let specificationsMismatch = false;
+      let mismatchDetails = [];
+      
+      if (matchedOrderItem && (result.stock || result.divided)) {
+        const scannedItem = result.stock || result.divided;
+        
+        // Check GSM if both have it defined
+        if (matchedOrderItem.gsm && scannedItem.gsm && 
+            matchedOrderItem.gsm !== scannedItem.gsm) {
+          specificationsMismatch = true;
+          mismatchDetails.push(`GSM: ordered ${matchedOrderItem.gsm}, scanned ${scannedItem.gsm}`);
+        }
+        
+        // Check width if both have it defined
+        if (matchedOrderItem.width && scannedItem.width && 
+            matchedOrderItem.width !== scannedItem.width) {
+          specificationsMismatch = true;
+          mismatchDetails.push(`Width: ordered ${matchedOrderItem.width}, scanned ${scannedItem.width}`);
+        }
+        
+        // Check length if both have it defined
+        if (matchedOrderItem.length && scannedItem.length && 
+            matchedOrderItem.length !== scannedItem.length) {
+          specificationsMismatch = true;
+          mismatchDetails.push(`Length: ordered ${matchedOrderItem.length}, scanned ${scannedItem.length}`);
+        }
+        
+        if (specificationsMismatch) {
+          setLastScanError(`Item specifications don't match order. ${mismatchDetails.join(', ')}. Please scan a different item.`);
+          toast({
+            variant: "destructive",
+            title: "Specification Mismatch",
+            description: `This item doesn't match the ordered specifications. ${mismatchDetails.join(', ')}. Please scan a different item that matches the order specifications.`,
+            action: <ToastAction altText="Try Again" onClick={handleScan}>Try Again</ToastAction>,
+          });
+          return;
+        }
+      }
+
       // Update the UI to mark the item as scanned
       setIsScanSuccess(true);
       setLastScannedItem(result.item.type + (result.item.product ? ` (${result.item.product})` : ''));
@@ -749,11 +792,12 @@ export default function ShipmentProcessPage({ params }: { params: Promise<{ id: 
       }
     } else {
       // Show error for non-matching barcode
-      setLastScanError(result.error || 'Barcode does not match any item in this order');
+      setLastScanError(result.error || 'Barcode does not match any item in this order. Please scan a different item.');
       toast({
         variant: "destructive",
         title: "Scan Error",
-        description: result.error || 'Barcode does not match any item in this order',
+        description: result.error || 'Barcode does not match any item in this order. Please try scanning a different item that belongs to this order.',
+        action: <ToastAction altText="Try Again" onClick={handleScan}>Try Again</ToastAction>,
       });
     }
   };
