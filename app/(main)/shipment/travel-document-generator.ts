@@ -152,8 +152,8 @@ export async function generateTravelDocumentPDF(
   function startNewHalf(half: 0 | 1) {
     currentY = half === 0 ? 0 : travelDocHeight;
     let startY = addHeader(currentY);
-    currentY = addTableHeader(startY);
-    return currentY;
+    // Do not add table header here; it will be added only if there are items to show
+    return startY + 0; // just return the next Y after header
   }
 
   chunks.forEach((items, chunkIndex) => {
@@ -198,6 +198,13 @@ export async function generateTravelDocumentPDF(
             currentPage++;
           }
           currentY = startNewHalf(currentHalf);
+          // Only add table header if there are items to show
+          currentY = addTableHeader(currentY);
+          sectionStartY = currentY;
+        }
+        // If this is the first row in a new half, add the table header
+        if (firstRow && (currentY === (currentHalf === 0 ? 0 : travelDocHeight) + 48)) {
+          currentY = addTableHeader(currentY);
           sectionStartY = currentY;
         }
         // How many lines can we fit in this half?
