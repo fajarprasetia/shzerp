@@ -17,25 +17,15 @@ export async function GET(request: NextRequest) {
     const existingStock = await prisma.stock.findFirst({
       where: {
         barcodeId: barcodeId
-      },
-      include: {
-        inspectedBy: {
-          select: {
-            name: true
-          }
-        }
       }
     });
 
-    if (!existingStock) {
-      return NextResponse.json(
-        { error: 'Stock not found with this barcode' },
-        { status: 404 }
-      );
-    }
-
-    // Return full stock details
-    return NextResponse.json(existingStock);
+    // For stock form validation, we return if the barcode exists or not
+    // This allows the form to validate if a barcode is already in use
+    return NextResponse.json({ 
+      exists: !!existingStock,
+      stock: existingStock
+    });
   } catch (error) {
     console.error('Error validating barcode:', error);
     return NextResponse.json(

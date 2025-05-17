@@ -73,7 +73,7 @@ interface OrderWithCustomer extends Omit<Order, 'discountType'> {
   customer: Customer;
   orderItems: PrismaOrderItem[];
   discountType: "percentage" | "value";
-  marketingId?: string; // Add marketingId field
+  marketingId: string | null; // Match the Order model's nullable marketingId
 }
 
 interface OrderFormProps {
@@ -774,7 +774,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       // Prepare final submission data with the tax-inclusive subtotal
       const submissionData = {
         customerId: data.customerId,
-        marketingId: data.marketingId,
+        marketingId: data.marketingId || null, // Ensure marketingId is either string or null, not undefined
         orderItems,
         note: data.note || "",
         totalAmount: taxInclusiveSubtotal,
@@ -792,7 +792,12 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       console.log('totalAmount in submission data:', submissionData.totalAmount, 'type:', typeof submissionData.totalAmount);
 
       // Call the onSubmit function provided by the parent component
-      await onSubmit(submissionData);
+      try {
+        await onSubmit(submissionData);
+      } catch (submitError) {
+        console.error('Error from onSubmit callback:', submitError);
+        throw new Error(submitError instanceof Error ? submitError.message : 'Failed to submit order');
+      }
 
     } catch (error) {
       console.error('Form submission error:', {
@@ -1100,7 +1105,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-8 h-[calc(100vh-12rem)] overflow-y-auto pr-4">
         <div className="grid grid-cols-1 gap-6">
           {/* Customer Selection */}
         <FormField
@@ -1588,12 +1593,12 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
           </div>
 
         {/* Form Actions */}
-        <div className="flex justify-end gap-4 pt-4 border-t">
+        <div className="flex justify-end gap-4 pt-4 border-t sticky bottom-0 bg-background pb-2">
             <Button
               type="button"
               variant="outline"
               onClick={onCancel}
-            disabled={isLoading}
+              disabled={isLoading}
             >
                 Cancel
               </Button>

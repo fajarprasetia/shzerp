@@ -194,12 +194,14 @@ export async function POST(req: Request) {
       };
     });
 
-    // Generate a unique order number using the new SO-YYYYMMDDXXX format
+    // Generate a unique order number using the SO-YYYYMMDDXXX format
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const day = String(now.getDate()).padStart(2, "0");
     const datePrefix = `SO-${year}${month}${day}`;
+    
+    // Get all orders with today's prefix to find the highest sequence number
     const existingOrders = await prisma.order.findMany({
       where: {
         orderNo: {
@@ -207,28 +209,92 @@ export async function POST(req: Request) {
         }
       },
       orderBy: {
-        orderNo: "asc"
+        orderNo: "desc" // Sort by desc to get highest sequence first
       }
     });
+    
+    // Find the highest sequence number used today
     let nextSequence = 1;
     const usedSequences = new Set<number>();
+    
     if (existingOrders.length > 0) {
+      // Process all existing order numbers to build a complete set of used sequences
       existingOrders.forEach(order => {
         try {
           const sequencePart = order.orderNo.split('-')[2];
           if (sequencePart && /^\d{3}$/.test(sequencePart)) {
-            usedSequences.add(parseInt(sequencePart, 10));
+            const seq = parseInt(sequencePart, 10);
+            usedSequences.add(seq);
+            // Keep track of the highest sequence
+            if (seq >= nextSequence) {
+              nextSequence = seq + 1;
+            }
           }
         } catch (error) {
           console.warn('Could not parse order number:', order.orderNo);
         }
       });
-      while (usedSequences.has(nextSequence) && nextSequence <= 999) {
-        nextSequence++;
-      }
     }
-    const sequenceFormatted = String(nextSequence).padStart(3, '0');
-    const orderNumber = `${datePrefix}${sequenceFormatted}`;
+    
+    // Safety check to find an available sequence number
+    while (usedSequences.has(nextSequence) && nextSequence <= 999) {
+      nextSequence++;
+    }
+    
+    // If we hit 999, roll over to use alphabetic suffixes (A001, B001, etc.)
+    let orderNumber = '';
+    let prefix = '';
+    
+    if (nextSequence > 999) {
+      // Find next available alphabetic prefix
+      for (let charCode = 65; charCode <= 90; charCode++) { // A-Z
+        prefix = String.fromCharCode(charCode);
+        const alphaPrefix = `SO-${year}${month}${day}${prefix}`;
+        
+        // Check if any orders with this alpha prefix exist
+        const alphaOrders = await prisma.order.findMany({
+          where: {
+            orderNo: {
+              startsWith: alphaPrefix
+            }
+          },
+          orderBy: {
+            orderNo: "desc"
+          }
+        });
+        
+        if (alphaOrders.length === 0) {
+          // No orders with this alpha prefix, use 001
+          orderNumber = `${alphaPrefix}001`;
+          break;
+        } else {
+          // Find the highest sequence for this alpha prefix
+          try {
+            const lastOrder = alphaOrders[0];
+            const sequencePart = lastOrder.orderNo.substring(alphaPrefix.length);
+            if (sequencePart && /^\d{3}$/.test(sequencePart)) {
+              const seq = parseInt(sequencePart, 10) + 1;
+              if (seq <= 999) {
+                orderNumber = `${alphaPrefix}${String(seq).padStart(3, '0')}`;
+                break;
+              }
+            }
+          } catch (error) {
+            console.warn('Could not parse alpha order number:', alphaOrders[0].orderNo);
+          }
+        }
+      }
+      
+      // Fallback if all alphabetic prefixes are exhausted
+      if (!orderNumber) {
+        // Last resort - use timestamp suffix
+        orderNumber = `${datePrefix}-${Date.now().toString().substring(8)}`;
+      }
+    } else {
+      // Standard case - use next available sequence
+      const sequenceFormatted = String(nextSequence).padStart(3, '0');
+      orderNumber = `${datePrefix}${sequenceFormatted}`;
+    }
     
     console.log(`Generated guaranteed unique order number: ${orderNumber}`);
 
@@ -270,44 +336,48 @@ export async function POST(req: Request) {
       // Handle unique constraint errors specifically
       if (error.code === 'P2002' && error.meta?.target?.includes('orderNo')) {
         console.error(`Unique constraint error on orderNo: ${orderNumber}`);
-        // Try next available sequence
-        let emergencySequence = nextSequence + 1;
-        while (usedSequences.has(emergencySequence) && emergencySequence <= 999) {
-          emergencySequence++;
-        }
-        const emergencyOrderNumber = `${datePrefix}${String(emergencySequence).padStart(3, '0')}`;
-        console.log(`Retrying with emergency order number: ${emergencyOrderNumber}`);
-        const order = await prisma.order.create({
-          data: {
-            orderNo: emergencyOrderNumber,
-            customerId: body.customerId,
-            marketingId: body.marketingId || null,
-            totalAmount,
-            discount: body.discount ? Number(body.discount) : 0,
-            discountType: body.discountType || "percentage",
-            note: body.note || "",
-            orderItems: {
-              create: orderItems.map(item => ({
-                type: item.type,
-                product: item.product || null,
-                gsm: item.gsm || null,
-                width: item.width || null,
-                length: item.length || null,
-                weight: item.weight || null,
-                quantity: item.quantity,
-                price: item.price,
-                tax: item.tax,
-                stockId: item.stockId,
-                dividedId: item.dividedId
-              }))
+        
+        // Generate a truly unique fallback using timestamp
+        const timestampOrderNumber = `${datePrefix}-${Date.now().toString().substring(8)}`;
+        console.log(`Retrying with timestamp-based order number: ${timestampOrderNumber}`);
+        
+        // Final attempt with timestamp-based order number
+        try {
+          const order = await prisma.order.create({
+            data: {
+              orderNo: timestampOrderNumber,
+              customerId: body.customerId,
+              marketingId: body.marketingId || null,
+              totalAmount,
+              discount: body.discount ? Number(body.discount) : 0,
+              discountType: body.discountType || "percentage",
+              note: body.note || "",
+              orderItems: {
+                create: orderItems.map(item => ({
+                  type: item.type,
+                  product: item.product || null,
+                  gsm: item.gsm || null,
+                  width: item.width || null,
+                  length: item.length || null,
+                  weight: item.weight || null,
+                  quantity: item.quantity,
+                  price: item.price,
+                  tax: item.tax,
+                  stockId: item.stockId,
+                  dividedId: item.dividedId
+                }))
+              }
+            },
+            include: {
+              orderItems: true,
+              customer: true
             }
-          },
-          include: {
-            orderItems: true,
-            customer: true
-          }
-        });
-        return NextResponse.json(order);
+          });
+          return NextResponse.json(order);
+        } catch (finalError: any) {
+          console.error("Final attempt to create order failed:", finalError);
+          throw new Error("Order number generation failed after multiple attempts. Please try again.");
+        }
       }
       // Re-throw other errors
       throw error;

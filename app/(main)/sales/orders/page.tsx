@@ -179,59 +179,44 @@ function OrdersPage() {
         body: JSON.stringify(data),
       });
 
-      let responseData = await response.json();
-      console.log('[handleFormSubmit] API response:', {
-        status: response.status,
-        data: responseData
-      });
-
-      // If there was a unique constraint error, try one more time
-      if (!response.ok && responseData.details?.includes('Unique constraint failed')) {
-        console.log('[handleFormSubmit] Detected unique constraint error, retrying...');
+      // Check if we got a successful response
+      if (response.ok) {
+        const responseData = await response.json();
         
-        // Wait a moment before retrying
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Second attempt
-        response = await fetch(url, {
-          method: selectedOrder ? 'PUT' : 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(data),
-        });
-        
-        responseData = await response.json();
-        console.log('[handleFormSubmit] Retry API response:', {
+        console.log('[handleFormSubmit] API response success:', {
           status: response.status,
           data: responseData
         });
-      }
-
-      if (!response.ok) {
-        // Format a more user-friendly error message
-        let errorMessage = responseData.error || `Failed to save order: ${response.status}`;
         
-        // Handle specific error types
-        if (responseData.details?.includes('Unique constraint failed')) {
-          errorMessage = 'Order number already exists. Please try again.';
-        } else if (responseData.details) {
-          errorMessage = `${errorMessage}: ${responseData.details}`;
-        }
-        
-        throw new Error(errorMessage);
-      }
+        toast({
+          title: t('common.success', 'Success'),
+          description: selectedOrder 
+            ? t('sales.orders.updateSuccess', 'Order updated successfully')
+            : t('sales.orders.createSuccess', 'Order created successfully'),
+        });
 
-      toast({
-        title: t('common.success', 'Success'),
-        description: selectedOrder 
-          ? t('sales.orders.updateSuccess', 'Order updated successfully')
-          : t('sales.orders.createSuccess', 'Order created successfully'),
+        setShowForm(false);
+        setSelectedOrder(null);
+        fetchOrders();
+        return;
+      }
+      
+      // Handle error response
+      const responseData = await response.json();
+      console.log('[handleFormSubmit] API response error:', {
+        status: response.status,
+        data: responseData
       });
-
-      setShowForm(false);
-      setSelectedOrder(null);
-      fetchOrders();
+      
+      // Format a user-friendly error message
+      let errorMessage = responseData.error || `Failed to save order: ${response.status}`;
+      
+      // Add details if available
+      if (responseData.details) {
+        errorMessage = `${errorMessage}: ${responseData.details}`;
+      }
+      
+      throw new Error(errorMessage);
     } catch (error) {
       console.error('[handleFormSubmit] Error:', {
         error,

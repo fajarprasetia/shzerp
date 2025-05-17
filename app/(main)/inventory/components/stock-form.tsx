@@ -123,6 +123,7 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
       }
       
       const data = await response.json();
+      // Returns true if barcode is NOT in use (valid for new entry)
       return !data.exists;
     } catch (error) {
       console.error("Error validating barcode:", error);
@@ -294,7 +295,7 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 h-[calc(100vh-12rem)] overflow-y-auto pr-4">
       <div>
         <h2 className="text-2xl font-bold">
           {initialData ? t('inventory.stock.editStock', 'Edit Stock') : t('inventory.stock.addStock', 'Add New Stock')}
@@ -462,7 +463,7 @@ export function StockForm({ initialData, onSubmit, onCancel }: StockFormProps) {
           </div>
         </div>
 
-        <div className="flex justify-end gap-4">
+        <div className="flex justify-end gap-4 sticky bottom-0 bg-background pt-4 pb-2">
           <Button
             type="button"
             variant="outline"
