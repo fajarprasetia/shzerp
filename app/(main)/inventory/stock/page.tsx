@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useStockData, StockWithInspector } from "@/hooks/use-stock-data";
 import { DataTable } from "@/components/ui/data-table";
-import { MoreVertical, Plus, Trash2, Printer } from "lucide-react";
+import { MoreVertical, Plus, Trash2, Printer, X } from "lucide-react";
 import { format } from "date-fns";
 import { ColumnDef } from "@tanstack/react-table";
 import { Stock } from "@prisma/client";
@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { StockForm } from "../components/stock-form";
-import { getColumns } from "./columns";
+import { getColumns, FilterComponents } from "./columns";
 import { generateBarcode } from "@/lib/inventory";
 import QRCode from "qrcode";
 import { withPermission } from "@/app/components/with-permission";
@@ -33,6 +33,9 @@ import i18nInstance from "@/app/i18n";
 // Import the context provider and batch print button
 import { SelectedBarcodesProvider, BatchPrintButton, useSelectedBarcodes } from "./columns";
 import { InventoryLogsTable } from "../components/InventoryLogsTable";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 
 export default withPermission(StockPage, "inventory", "read");
 
@@ -48,6 +51,9 @@ function StockPageContent() {
   // Use the pre-initialized i18n instance
   const { t, i18n } = useTranslation(undefined, { i18n: i18nInstance });
   const [mounted, setMounted] = useState(false);
+  
+  // Add filter state
+  const [columnFilters, setColumnFilters] = useState<any[]>([]);
   
   // Get the selected barcodes from context
   const { selectedBarcodes, setSelectedBarcodes, printSelectedBarcodes } = useSelectedBarcodes();
@@ -81,6 +87,11 @@ function StockPageContent() {
     }
     return true;
   });
+
+  // Function to clear all filters
+  const clearAllFilters = () => {
+    setColumnFilters([]);
+  };
 
   const handleSubmit = async (stockData: Stock) => {
     await mutate();
@@ -184,6 +195,69 @@ function StockPageContent() {
     });
   };
 
+  // Render active filters
+  const renderActiveFilters = () => {
+    if (columnFilters.length === 0) return null;
+    
+    return (
+      <div className="flex flex-wrap gap-2 mb-4">
+        <div className="text-sm font-medium mr-2 flex items-center">
+          {t('common.activeFilters', 'Active filters:')}
+        </div>
+        {columnFilters.map((filter, index) => {
+          // Find the column definition to get the header text
+          const column = columns.find(col => col.id === filter.id || col.accessorKey === filter.id);
+          const columnName = column ? 
+            (typeof column.header === 'function' ? 
+              t(`inventory.stock.${filter.id}`, filter.id) : 
+              column.header) : 
+            filter.id;
+          
+          // Format the filter value based on its type
+          let filterDisplay = '';
+          if (typeof filter.value === 'string') {
+            filterDisplay = filter.value;
+          } else if (typeof filter.value === 'object') {
+            if (filter.value.min !== undefined && filter.value.max !== undefined) {
+              filterDisplay = `${filter.value.min} - ${filter.value.max}`;
+            } else if (filter.value.min !== undefined) {
+              filterDisplay = `≥ ${filter.value.min}`;
+            } else if (filter.value.max !== undefined) {
+              filterDisplay = `≤ ${filter.value.max}`;
+            } else if (filter.value.start && filter.value.end) {
+              filterDisplay = `${filter.value.start} - ${filter.value.end}`;
+            }
+          }
+          
+          return (
+            <Badge key={index} variant="outline" className="flex items-center gap-1">
+              <span>{columnName}: {filterDisplay}</span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-4 w-4 p-0 rounded-full"
+                onClick={() => {
+                  const newFilters = columnFilters.filter((_, i) => i !== index);
+                  setColumnFilters(newFilters);
+                }}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </Badge>
+          );
+        })}
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="h-6 text-xs"
+          onClick={clearAllFilters}
+        >
+          {t('common.clearAll', 'Clear all')}
+        </Button>
+      </div>
+    );
+  };
+
   // Return a loading placeholder while mounting to avoid hydration issues
   if (!mounted || isLoading) {
     return <div>{t('common.loading', 'Loading...')}</div>;
@@ -240,19 +314,18 @@ function StockPageContent() {
               <TabsTrigger value="logs">{t('inventory.logs.title', 'Logs')}</TabsTrigger>
             </TabsList>
             
+            {/* Render active filters */}
+            {renderActiveFilters()}
+            
             <TabsContent value="available" className="w-full">
               <DataTable 
                 columns={columns}
                 data={filteredData || []} 
                 enableSorting={true}
-                searchableColumns={[
-                  { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
-                  { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
-                  { id: "type", displayName: t('inventory.stock.type', 'Type') },
-                  { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
-                  { id: "width", displayName: t('inventory.stock.width', 'Width') },
-                  { id: "length", displayName: t('inventory.stock.length', 'Length') }
-                ]}
+                enableColumnFilters={true}
+                onColumnFiltersChange={setColumnFilters}
+                columnFilters={columnFilters}
+                searchPlaceholder={t('inventory.stock.searchPlaceholder', 'Search stocks...')}
               />
             </TabsContent>
             
@@ -261,14 +334,10 @@ function StockPageContent() {
                 columns={columns}
                 data={filteredData || []} 
                 enableSorting={true}
-                searchableColumns={[
-                  { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
-                  { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
-                  { id: "type", displayName: t('inventory.stock.type', 'Type') },
-                  { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
-                  { id: "width", displayName: t('inventory.stock.width', 'Width') },
-                  { id: "length", displayName: t('inventory.stock.length', 'Length') }
-                ]}
+                enableColumnFilters={true}
+                onColumnFiltersChange={setColumnFilters}
+                columnFilters={columnFilters}
+                searchPlaceholder={t('inventory.stock.searchPlaceholder', 'Search stocks...')}
               />
             </TabsContent>
             
@@ -277,14 +346,10 @@ function StockPageContent() {
                 columns={columns}
                 data={filteredData || []} 
                 enableSorting={true}
-                searchableColumns={[
-                  { id: "jumboRollNo", displayName: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.') },
-                  { id: "barcodeId", displayName: t('inventory.stock.barcodeId', 'Barcode ID') },
-                  { id: "type", displayName: t('inventory.stock.type', 'Type') },
-                  { id: "gsm", displayName: t('inventory.stock.gsm', 'GSM') },
-                  { id: "width", displayName: t('inventory.stock.width', 'Width') },
-                  { id: "length", displayName: t('inventory.stock.length', 'Length') }
-                ]}
+                enableColumnFilters={true}
+                onColumnFiltersChange={setColumnFilters}
+                columnFilters={columnFilters}
+                searchPlaceholder={t('inventory.stock.searchPlaceholder', 'Search stocks...')}
               />
             </TabsContent>
             

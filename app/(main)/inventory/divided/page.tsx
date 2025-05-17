@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useDividedData, DividedWithSoldInfo as HookDividedWithSoldInfo } from "@/hooks/use-divided-data";
 import { DataTable } from "@/components/ui/data-table";
-import { MoreVertical, Plus, Trash2, Printer, Edit } from "lucide-react";
+import { MoreVertical, Plus, Trash2, Printer, Edit, Filter, X } from "lucide-react";
 import { format } from "date-fns";
-import { ColumnDef } from "@tanstack/react-table";
+import { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";
 import { Divided, Stock } from "@prisma/client";
 import { useToast } from "@/components/ui/use-toast";
 import { jsPDF } from "jspdf";
@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 // Import pre-initialized i18n instance
 import i18nInstance from "@/app/i18n";
 import { InventoryLogsTable } from "../components/InventoryLogsTable";
@@ -63,6 +64,8 @@ export default function DividedPage() {
   // Use the pre-initialized i18n instance
   const { t, i18n } = useTranslation(undefined, { i18n: i18nInstance });
   const [mounted, setMounted] = useState(false);
+  // Add filter state
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 
   // Effect to handle mounting and debug i18n state
   useEffect(() => {
@@ -232,6 +235,65 @@ export default function DividedPage() {
     doc.save("divided-labels.pdf");
   };
 
+  // Function to clear all filters
+  const clearAllFilters = () => {
+    setColumnFilters([]);
+  };
+
+  // Render active filters
+  const renderActiveFilters = () => {
+    if (columnFilters.length === 0) return null;
+    
+    return (
+      <div className="flex flex-wrap gap-2 mb-4">
+        <div className="text-sm font-medium mr-2 flex items-center">
+          {t('common.activeFilters', 'Active filters:')}
+        </div>
+        {columnFilters.map((filter, index) => {
+          let filterDisplay = '';
+          if (typeof filter.value === 'string') {
+            filterDisplay = filter.value;
+          } else if (typeof filter.value === 'object') {
+            if (filter.value.min !== undefined && filter.value.max !== undefined) {
+              filterDisplay = `${filter.value.min} - ${filter.value.max}`;
+            } else if (filter.value.min !== undefined) {
+              filterDisplay = `≥ ${filter.value.min}`;
+            } else if (filter.value.max !== undefined) {
+              filterDisplay = `≤ ${filter.value.max}`;
+            } else if (filter.value.start && filter.value.end) {
+              filterDisplay = `${filter.value.start} - ${filter.value.end}`;
+            }
+          }
+          
+          return (
+            <Badge key={index} variant="outline" className="flex items-center gap-1">
+              <span>{filter.id}: {filterDisplay}</span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-4 w-4 p-0 rounded-full"
+                onClick={() => {
+                  const newFilters = columnFilters.filter((_, i) => i !== index);
+                  setColumnFilters(newFilters);
+                }}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </Badge>
+          );
+        })}
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="h-6 text-xs"
+          onClick={clearAllFilters}
+        >
+          {t('common.clearAll', 'Clear all')}
+        </Button>
+      </div>
+    );
+  };
+
   const columns: ColumnDef<ExtendedDividedInfo, unknown>[] = [
     {
       id: "select",
@@ -265,57 +327,378 @@ export default function DividedPage() {
     },
     {
       accessorKey: "rollNo",
-      header: t('inventory.divided.rollNo', 'Roll No'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.divided.rollNo', 'Roll No')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-60">
+                <div className="p-2">
+                  <Label>{t('common.filter', 'Filter')}</Label>
+                  <Input
+                    placeholder={t('common.search', 'Search...')}
+                    value={(column.getFilterValue() as string) ?? ""}
+                    onChange={(e) => column.setFilterValue(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
       sortingFn: "alphanumeric",
       enableSorting: true,
+      filterFn: "includesString",
+      enableColumnFilter: true,
     },
     {
       accessorKey: "type",
-      header: t('inventory.divided.type', 'Type'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.divided.type', 'Type')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <div className="p-2">
+                  <Label>{t('common.filter', 'Filter')}</Label>
+                  <Input
+                    placeholder={t('common.search', 'Search...')}
+                    value={(column.getFilterValue() as string) ?? ""}
+                    onChange={(e) => column.setFilterValue(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
       sortingFn: "alphanumeric",
       enableSorting: true,
+      filterFn: "includesString",
+      enableColumnFilter: true,
       cell: ({ row }) => row.original.stockId === "current" ? t('inventory.divided.current', 'Current') : (row.original as ExtendedDividedInfo).stock?.type || '-',
     },
     {
       id: "gsm",
-      header: t('inventory.divided.gsm', 'GSM'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.divided.gsm', 'GSM')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-60">
+                <div className="p-2 space-y-2">
+                  <Label>{t('common.filter', 'Filter')}</Label>
+                  <div className="flex items-center space-x-2">
+                    <Input
+                      placeholder={t('common.min', 'Min')}
+                      type="number"
+                      value={(column.getFilterValue() as any)?.min || ""}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : undefined;
+                        column.setFilterValue(old => ({
+                          ...(old as object || {}),
+                          min: val
+                        }));
+                      }}
+                    />
+                    <span>-</span>
+                    <Input
+                      placeholder={t('common.max', 'Max')}
+                      type="number"
+                      value={(column.getFilterValue() as any)?.max || ""}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : undefined;
+                        column.setFilterValue(old => ({
+                          ...(old as object || {}),
+                          max: val
+                        }));
+                      }}
+                    />
+                  </div>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
       sortingFn: "basic",
       enableSorting: true,
       accessorFn: (row) => row.stockId === "current" ? "" : row.stock?.gsm?.toString() || '',
       cell: ({ row }) => row.original.stockId === "current" ? "-" : (row.original as ExtendedDividedInfo).stock?.gsm || '-',
+      filterFn: (row, columnId, filterValue) => {
+        if (!filterValue) return true;
+        const { min, max } = filterValue as { min?: number, max?: number };
+        const gsm = row.stock?.gsm;
+        
+        if (!gsm) return min === undefined; // If no GSM and min filter, exclude; if no min filter, include
+        
+        if (min !== undefined && max !== undefined) {
+          return gsm >= min && gsm <= max;
+        } else if (min !== undefined) {
+          return gsm >= min;
+        } else if (max !== undefined) {
+          return gsm <= max;
+        }
+        return true;
+      },
+      enableColumnFilter: true,
     },
     {
       accessorKey: "containerNo",
-      header: t('inventory.divided.containerNo', 'Container No'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.divided.containerNo', 'Container No')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <div className="p-2">
+                  <Label>{t('common.filter', 'Filter')}</Label>
+                  <Input
+                    placeholder={t('common.search', 'Search...')}
+                    value={(column.getFilterValue() as string) ?? ""}
+                    onChange={(e) => column.setFilterValue(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
       sortingFn: "alphanumeric",
       enableSorting: true,
+      filterFn: "includesString",
+      enableColumnFilter: true,
       cell: ({ row }) => (row.original as ExtendedDividedInfo).containerNo || (row.original as ExtendedDividedInfo).stock?.containerNo || "-",
     },
     {
       accessorKey: "arrivalDate",
-      header: t('inventory.divided.arrivalDate', 'Arrival Date'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.divided.arrivalDate', 'Arrival Date')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-auto">
+                <div className="p-2 space-y-2">
+                  <Label>{t('common.filter', 'Filter')}</Label>
+                  <div className="flex flex-col space-y-2">
+                    <Input
+                      type="date"
+                      value={(column.getFilterValue() as any)?.start || ""}
+                      onChange={(e) => {
+                        column.setFilterValue(old => ({
+                          ...(old as object || {}),
+                          start: e.target.value || undefined
+                        }));
+                      }}
+                      placeholder={t('common.startDate', 'Start date')}
+                    />
+                    <Input
+                      type="date"
+                      value={(column.getFilterValue() as any)?.end || ""}
+                      onChange={(e) => {
+                        column.setFilterValue(old => ({
+                          ...(old as object || {}),
+                          end: e.target.value || undefined
+                        }));
+                      }}
+                      placeholder={t('common.endDate', 'End date')}
+                    />
+                  </div>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
       sortingFn: "datetime",
       enableSorting: true,
       cell: ({ row }) => {
         const date = (row.original as ExtendedDividedInfo).arrivalDate || (row.original as ExtendedDividedInfo).stock?.arrivalDate;
         return date ? format(new Date(date), "dd/MM/yyyy") : "-";
       },
+      filterFn: (row, columnId, filterValue) => {
+        if (!filterValue) return true;
+        const { start, end } = filterValue as { start?: string, end?: string };
+        const date = (row.original as ExtendedDividedInfo).arrivalDate || (row.original as ExtendedDividedInfo).stock?.arrivalDate;
+        
+        if (!date) return !start && !end; // If no date and no filters, include it
+        
+        const dateValue = new Date(date);
+        
+        if (start && end) {
+          return dateValue >= new Date(start) && dateValue <= new Date(end);
+        } else if (start) {
+          return dateValue >= new Date(start);
+        } else if (end) {
+          return dateValue <= new Date(end);
+        }
+        return true;
+      },
+      enableColumnFilter: true,
     },
     {
       id: "width",
-      header: t('inventory.divided.width', 'Width'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.divided.width', 'Width')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-60">
+                <div className="p-2 space-y-2">
+                  <Label>{t('common.filter', 'Filter')}</Label>
+                  <div className="flex items-center space-x-2">
+                    <Input
+                      placeholder={t('common.min', 'Min')}
+                      type="number"
+                      value={(column.getFilterValue() as any)?.min || ""}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : undefined;
+                        column.setFilterValue(old => ({
+                          ...(old as object || {}),
+                          min: val
+                        }));
+                      }}
+                    />
+                    <span>-</span>
+                    <Input
+                      placeholder={t('common.max', 'Max')}
+                      type="number"
+                      value={(column.getFilterValue() as any)?.max || ""}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : undefined;
+                        column.setFilterValue(old => ({
+                          ...(old as object || {}),
+                          max: val
+                        }));
+                      }}
+                    />
+                  </div>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
       sortingFn: "basic",
       enableSorting: true,
       accessorFn: (row) => row.width.toString(),
       cell: ({ row }) => `${row.original.width}mm`,
+      filterFn: (row, columnId, filterValue) => {
+        if (!filterValue) return true;
+        const { min, max } = filterValue as { min?: number, max?: number };
+        const width = row.original.width;
+        
+        if (min !== undefined && max !== undefined) {
+          return width >= min && width <= max;
+        } else if (min !== undefined) {
+          return width >= min;
+        } else if (max !== undefined) {
+          return width <= max;
+        }
+        return true;
+      },
+      enableColumnFilter: true,
     },
     {
       id: "length",
-      header: t('inventory.divided.length', 'Length'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.divided.length', 'Length')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-60">
+                <div className="p-2 space-y-2">
+                  <Label>{t('common.filter', 'Filter')}</Label>
+                  <div className="flex items-center space-x-2">
+                    <Input
+                      placeholder={t('common.min', 'Min')}
+                      type="number"
+                      value={(column.getFilterValue() as any)?.min || ""}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : undefined;
+                        column.setFilterValue(old => ({
+                          ...(old as object || {}),
+                          min: val
+                        }));
+                      }}
+                    />
+                    <span>-</span>
+                    <Input
+                      placeholder={t('common.max', 'Max')}
+                      type="number"
+                      value={(column.getFilterValue() as any)?.max || ""}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : undefined;
+                        column.setFilterValue(old => ({
+                          ...(old as object || {}),
+                          max: val
+                        }));
+                      }}
+                    />
+                  </div>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
       sortingFn: "basic",
       enableSorting: true,
       accessorFn: (row) => row.length.toString(),
       cell: ({ row }) => `${row.original.length}m`,
+      filterFn: (row, columnId, filterValue) => {
+        if (!filterValue) return true;
+        const { min, max } = filterValue as { min?: number, max?: number };
+        const length = row.original.length;
+        
+        if (min !== undefined && max !== undefined) {
+          return length >= min && length <= max;
+        } else if (min !== undefined) {
+          return length >= min;
+        } else if (max !== undefined) {
+          return length <= max;
+        }
+        return true;
+      },
+      enableColumnFilter: true,
     },
     {
       accessorKey: "weight",
@@ -461,18 +844,19 @@ export default function DividedPage() {
           <TabsTrigger value="logs">{t('inventory.logs.title', 'Logs')}</TabsTrigger>
         </TabsList>
         
+        {/* Render active filters */}
+        {renderActiveFilters()}
+        
         <TabsContent value="available" className="w-full">
           <DataTable 
             columns={columns} 
             data={filteredData || []} 
             enableSorting={true}
             initialSorting={initialSorting}
-            searchableColumns={[
-              { id: "rollNo", displayName: t('inventory.divided.rollNo', 'Roll No') },
-              { id: "gsm", displayName: t('inventory.divided.gsm', 'GSM') },
-              { id: "width", displayName: t('inventory.divided.width', 'Width') },
-              { id: "length", displayName: t('inventory.divided.length', 'Length') }
-            ]}
+            enableColumnFilters={true}
+            columnFilters={columnFilters}
+            onColumnFiltersChange={setColumnFilters}
+            searchPlaceholder={t('inventory.divided.searchPlaceholder', 'Search divided stock...')}
           />
         </TabsContent>
         
@@ -482,12 +866,10 @@ export default function DividedPage() {
             data={filteredData || []}
             enableSorting={true}
             initialSorting={initialSorting}
-            searchableColumns={[
-              { id: "rollNo", displayName: t('inventory.divided.rollNo', 'Roll No') },
-              { id: "gsm", displayName: t('inventory.divided.gsm', 'GSM') },
-              { id: "width", displayName: t('inventory.divided.width', 'Width') },
-              { id: "length", displayName: t('inventory.divided.length', 'Length') }
-            ]}
+            enableColumnFilters={true}
+            columnFilters={columnFilters}
+            onColumnFiltersChange={setColumnFilters}
+            searchPlaceholder={t('inventory.divided.searchPlaceholder', 'Search divided stock...')}
           />
         </TabsContent>
         <TabsContent value="logs" className="w-full">

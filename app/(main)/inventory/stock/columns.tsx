@@ -7,12 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TFunction } from "i18next";
 import { Button } from "@/components/ui/button";
-import { Pencil, Trash, Ruler, Printer } from "lucide-react";
+import { Pencil, Trash, Ruler, Printer, Filter } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import {
   Popover,
@@ -27,6 +29,9 @@ import { useToast } from "@/components/ui/use-toast";
 import JsBarcode from "jsbarcode";
 import { jsPDF } from "jspdf";
 import { useTranslation } from "react-i18next";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Extend the interface to ensure it includes the inspector property
 declare module "@/hooks/use-stock-data" {
@@ -173,6 +178,137 @@ export const BatchPrintButton = () => {
       {t('inventory.stock.printSelectedBarcodes', `Print ${selectedBarcodes.length} Selected Barcodes`)}
     </Button>
   );
+};
+
+// Filter components for different column types
+export const FilterComponents = {
+  // Text filter with input
+  TextFilter: ({ column, t }: { column: any, t: TFunction }) => {
+    const [value, setValue] = useState('');
+    
+    const onFilterChange = (value: string) => {
+      setValue(value);
+      column.setFilterValue(value);
+    };
+    
+    return (
+      <div className="p-2">
+        <Label>{t('common.filter', 'Filter')}</Label>
+        <Input
+          placeholder={t('common.search', 'Search...')}
+          value={value}
+          onChange={(e) => onFilterChange(e.target.value)}
+          className="mt-1"
+        />
+      </div>
+    );
+  },
+  
+  // Number range filter
+  NumberRangeFilter: ({ column, t }: { column: any, t: TFunction }) => {
+    const [min, setMin] = useState('');
+    const [max, setMax] = useState('');
+    
+    const onMinChange = (value: string) => {
+      const numericValue = value === '' ? undefined : parseFloat(value);
+      setMin(value);
+      const filterValue = column.getFilterValue() || {};
+      column.setFilterValue({ ...filterValue, min: numericValue });
+    };
+    
+    const onMaxChange = (value: string) => {
+      const numericValue = value === '' ? undefined : parseFloat(value);
+      setMax(value);
+      const filterValue = column.getFilterValue() || {};
+      column.setFilterValue({ ...filterValue, max: numericValue });
+    };
+    
+    return (
+      <div className="p-2 space-y-2">
+        <Label>{t('common.filter', 'Filter')}</Label>
+        <div className="flex items-center space-x-2">
+          <Input
+            placeholder={t('common.min', 'Min')}
+            type="number"
+            value={min}
+            onChange={(e) => onMinChange(e.target.value)}
+          />
+          <span>-</span>
+          <Input
+            placeholder={t('common.max', 'Max')}
+            type="number"
+            value={max}
+            onChange={(e) => onMaxChange(e.target.value)}
+          />
+        </div>
+      </div>
+    );
+  },
+  
+  // Select filter with options
+  SelectFilter: ({ column, options, t }: { column: any, options: {value: string, label: string}[], t: TFunction }) => {
+    const [value, setValue] = useState('');
+    
+    const onValueChange = (newValue: string) => {
+      setValue(newValue);
+      column.setFilterValue(newValue === 'all' ? undefined : newValue);
+    };
+    
+    return (
+      <div className="p-2">
+        <Label>{t('common.filter', 'Filter')}</Label>
+        <Select value={value} onValueChange={onValueChange}>
+          <SelectTrigger className="mt-1">
+            <SelectValue placeholder={t('common.selectOption', 'Select option')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('common.all', 'All')}</SelectItem>
+            {options.map(option => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  },
+  
+  // Date range filter
+  DateRangeFilter: ({ column, t }: { column: any, t: TFunction }) => {
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+    
+    const onStartDateChange = (value: string) => {
+      setStartDate(value);
+      const filterValue = column.getFilterValue() || {};
+      column.setFilterValue({ ...filterValue, start: value || undefined });
+    };
+    
+    const onEndDateChange = (value: string) => {
+      setEndDate(value);
+      const filterValue = column.getFilterValue() || {};
+      column.setFilterValue({ ...filterValue, end: value || undefined });
+    };
+    
+    return (
+      <div className="p-2 space-y-2">
+        <Label>{t('common.filter', 'Filter')}</Label>
+        <div className="flex flex-col space-y-2">
+          <Input
+            type="date"
+            value={startDate}
+            onChange={(e) => onStartDateChange(e.target.value)}
+            placeholder={t('common.startDate', 'Start date')}
+          />
+          <Input
+            type="date"
+            value={endDate}
+            onChange={(e) => onEndDateChange(e.target.value)}
+            placeholder={t('common.endDate', 'End date')}
+          />
+        </div>
+      </div>
+    );
+  },
 };
 
 // Create the columns with the checkbox component integrated with the context
@@ -391,9 +527,12 @@ export const getColumns = (
     {
       accessorKey: "jumboRollNo",
       header: t('inventory.stock.jumboRollNo', 'Jumbo Roll No.'),
-      filterFn: (row, id, value) => {
-        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
-        return searchValue.includes(value.toLowerCase());
+      filterFn: "includesString",
+      enableColumnFilter: true,
+      meta: {
+        filterComponent: (column: any) => (
+          <FilterComponents.TextFilter column={column} t={t} />
+        ),
       },
     },
     {
@@ -424,52 +563,186 @@ export const getColumns = (
           </div>
         );
       },
-      filterFn: (row, id, value) => {
-        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
-        return searchValue.includes(value.toLowerCase());
+      filterFn: "includesString",
+      enableColumnFilter: true,
+      meta: {
+        filterComponent: (column: any) => (
+          <FilterComponents.TextFilter column={column} t={t} />
+        ),
       },
     },
     {
       accessorKey: "type",
-      header: t('inventory.stock.type', 'Type'),
-      filterFn: (row, id, value) => {
-        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
-        return searchValue.includes(value.toLowerCase());
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.stock.type', 'Type')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <FilterComponents.SelectFilter 
+                  column={column} 
+                  options={[
+                    { value: 'Sublimation Paper', label: 'Sublimation Paper' },
+                    { value: 'Transfer Paper', label: 'Transfer Paper' },
+                    { value: 'Protection Paper', label: 'Protection Paper' }
+                  ]}
+                  t={t}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
       },
+      filterFn: "equals",
+      enableColumnFilter: true,
     },
     {
       id: "gsm",
-      header: t('inventory.stock.gsm', 'GSM'),
-      accessorFn: (row) => row.gsm?.toString() || '',
-      cell: ({ row }) => row.original.gsm,
-      filterFn: (row, id, value) => {
-        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
-        return searchValue.includes(value.toLowerCase());
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.stock.gsm', 'GSM')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-auto">
+                <FilterComponents.NumberRangeFilter column={column} t={t} />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
       },
+      accessorFn: (row) => row.gsm || 0,
+      filterFn: (row, columnId, filterValue) => {
+        if (!filterValue) return true;
+        const { min, max } = filterValue as { min?: number, max?: number };
+        const gsm = row.getValue(columnId) as number;
+        
+        if (min !== undefined && max !== undefined) {
+          return gsm >= min && gsm <= max;
+        } else if (min !== undefined) {
+          return gsm >= min;
+        } else if (max !== undefined) {
+          return gsm <= max;
+        }
+        return true;
+      },
+      enableColumnFilter: true,
     },
     {
       id: "width",
-      header: t('inventory.stock.width', 'Width (mm)'),
-      accessorFn: (row) => row.width?.toString() || '',
-      cell: ({ row }) => row.original.width,
-      filterFn: (row, id, value) => {
-        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
-        return searchValue.includes(value.toLowerCase());
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.stock.width', 'Width (mm)')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-auto">
+                <FilterComponents.NumberRangeFilter column={column} t={t} />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
       },
+      accessorFn: (row) => row.width || 0,
+      filterFn: (row, columnId, filterValue) => {
+        if (!filterValue) return true;
+        const { min, max } = filterValue as { min?: number, max?: number };
+        const width = row.getValue(columnId) as number;
+        
+        if (min !== undefined && max !== undefined) {
+          return width >= min && width <= max;
+        } else if (min !== undefined) {
+          return width >= min;
+        } else if (max !== undefined) {
+          return width <= max;
+        }
+        return true;
+      },
+      enableColumnFilter: true,
     },
     {
       id: "length",
-      header: t('inventory.stock.length', 'Length (mm)'),
-      accessorFn: (row) => row.length?.toString() || '',
-      cell: ({ row }) => row.original.length,
-      filterFn: (row, id, value) => {
-        const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
-        return searchValue.includes(value.toLowerCase());
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.stock.length', 'Length (mm)')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-auto">
+                <FilterComponents.NumberRangeFilter column={column} t={t} />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
       },
+      accessorFn: (row) => row.length || 0,
+      filterFn: (row, columnId, filterValue) => {
+        if (!filterValue) return true;
+        const { min, max } = filterValue as { min?: number, max?: number };
+        const length = row.getValue(columnId) as number;
+        
+        if (min !== undefined && max !== undefined) {
+          return length >= min && length <= max;
+        } else if (min !== undefined) {
+          return length >= min;
+        } else if (max !== undefined) {
+          return length <= max;
+        }
+        return true;
+      },
+      enableColumnFilter: true,
     },
     {
       accessorKey: "remainingLength",
-      header: t('inventory.stock.remainingLength', 'Remaining (mm)'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.stock.remainingLength', 'Remaining (mm)')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-auto">
+                <FilterComponents.NumberRangeFilter column={column} t={t} />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
+      filterFn: (row, columnId, filterValue) => {
+        if (!filterValue) return true;
+        const { min, max } = filterValue as { min?: number, max?: number };
+        const remainingLength = row.getValue(columnId) as number;
+        
+        if (min !== undefined && max !== undefined) {
+          return remainingLength >= min && remainingLength <= max;
+        } else if (min !== undefined) {
+          return remainingLength >= min;
+        } else if (max !== undefined) {
+          return remainingLength <= max;
+        }
+        return true;
+      },
+      enableColumnFilter: true,
     },
     {
       accessorKey: "weight",
@@ -478,15 +751,78 @@ export const getColumns = (
     {
       accessorKey: "containerNo",
       header: t('inventory.stock.containerNo', 'Container No.'),
+      filterFn: "includesString",
+      enableColumnFilter: true,
+      meta: {
+        filterComponent: (column: any) => (
+          <FilterComponents.TextFilter column={column} t={t} />
+        ),
+      },
     },
     {
       accessorKey: "arrivalDate",
-      header: t('inventory.stock.arrivalDate', 'Arrival Date'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.stock.arrivalDate', 'Arrival Date')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-auto">
+                <FilterComponents.DateRangeFilter column={column} t={t} />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
       cell: ({ row }) => format(new Date(row.getValue("arrivalDate")), "dd/MM/yyyy"),
+      filterFn: (row, columnId, filterValue) => {
+        if (!filterValue) return true;
+        const { start, end } = filterValue as { start?: string, end?: string };
+        const date = row.getValue(columnId) as Date;
+        const dateValue = new Date(date);
+        
+        if (start && end) {
+          return dateValue >= new Date(start) && dateValue <= new Date(end);
+        } else if (start) {
+          return dateValue >= new Date(start);
+        } else if (end) {
+          return dateValue <= new Date(end);
+        }
+        return true;
+      },
+      enableColumnFilter: true,
     },
     {
       accessorKey: "status",
-      header: t('inventory.stock.status', 'Status'),
+      header: ({ column }) => {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>{t('inventory.stock.status', 'Status')}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 ml-1">
+                  <Filter className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <FilterComponents.SelectFilter 
+                  column={column} 
+                  options={[
+                    { value: 'AVAILABLE', label: 'Available' },
+                    { value: 'RESERVED', label: 'Reserved' },
+                    { value: 'PROCESSING', label: 'Processing' }
+                  ]}
+                  t={t}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
       cell: ({ row }) => {
         const status = row.getValue("status") as string;
         return (
@@ -495,6 +831,8 @@ export const getColumns = (
           </Badge>
         );
       },
+      filterFn: "equals",
+      enableColumnFilter: true,
     },
     {
       accessorKey: "inspector",
