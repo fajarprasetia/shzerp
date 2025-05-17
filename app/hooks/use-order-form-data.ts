@@ -1,19 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Stock, Divided, Customer } from "@prisma/client";
+import { Stock, Divided, Customer, User } from "@prisma/client";
 
 interface OrderFormData {
   customers: Customer[];
   stocks: Stock[];
   dividedStocks: Divided[];
   isLoading: boolean;
+  error?: any;
 }
 
 export function useOrderFormData(): OrderFormData {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [dividedStocks, setDividedStocks] = useState<Divided[]>([]);
+  const [error, setError] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -39,7 +41,8 @@ export function useOrderFormData(): OrderFormData {
         setStocks(stocksData);
         setDividedStocks(dividedStocksData);
       } catch (error) {
-        console.error("Error fetching order form data:", error);
+        console.error("Error in useOrderFormData:", error);
+        setError(error);
       } finally {
         setIsLoading(false);
       }
@@ -53,5 +56,6 @@ export function useOrderFormData(): OrderFormData {
     stocks,
     dividedStocks,
     isLoading,
+    error
   };
 } 

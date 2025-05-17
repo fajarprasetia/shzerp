@@ -46,6 +46,7 @@ import { useOrderFormData } from "@/hooks/use-order-form-data";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import i18nInstance from "@/app/i18n";
+import { MarketingSelector } from "./marketing-selector";
 
 const productTypes = ["Sublimation Paper", "Protect Paper", "DTF Film", "Ink"] as const;
 const sublimationProducts = ["Jumbo Roll", "Roll"] as const;
@@ -72,6 +73,7 @@ interface OrderWithCustomer extends Omit<Order, 'discountType'> {
   customer: Customer;
   orderItems: PrismaOrderItem[];
   discountType: "percentage" | "value";
+  marketingId?: string; // Add marketingId field
 }
 
 interface OrderFormProps {
@@ -108,6 +110,7 @@ const orderItemSchema = z.object({
 
 const formSchema = z.object({
   customerId: z.string().min(1, "Customer is required"),
+  marketingId: z.string().optional(),
   orderItems: z.array(orderItemSchema).min(1, "At least one item is required"),
   note: z.string().optional(),
   discount: z.number().min(0, "Discount must be greater than or equal to 0").default(0),
@@ -123,6 +126,7 @@ type FormValues = z.infer<typeof formSchema>;
 
 const defaultValues: FormValues = {
   customerId: "",
+  marketingId: "",
   orderItems: [{
     type: "Sublimation Paper",
     product: undefined,
@@ -193,6 +197,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
     resolver: zodResolver(formSchema),
     defaultValues: {
       customerId: initialData?.customerId || "",
+      marketingId: initialData?.marketingId || "",
       orderItems: initialData?.orderItems
         ? initialData.orderItems
             .filter(item => allowedTypes.includes(item.type as ProductType))
@@ -644,6 +649,9 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
         throw new Error(t('sales.orders.errors.invalidDiscount', 'Discount must be greater than or equal to 0'));
       }
 
+      // Log marketing ID for debugging
+      console.log("Form submission - marketingId:", data.marketingId);
+
       // Process order items
       const orderItems = data.orderItems.map(item => {
         // Validate item fields
@@ -766,6 +774,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       // Prepare final submission data with the tax-inclusive subtotal
       const submissionData = {
         customerId: data.customerId,
+        marketingId: data.marketingId,
         orderItems,
         note: data.note || "",
         totalAmount: taxInclusiveSubtotal,
@@ -806,6 +815,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
   useEffect(() => {
     console.log('Form Values:', form.getValues());
     console.log('Customer ID:', form.getValues('customerId'));
+    console.log('Marketing ID:', form.getValues('marketingId'));
   }, [form]);
 
   // Modify the onCustomerSelect function
@@ -956,6 +966,8 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
   // Add useEffect to watch form changes
   useEffect(() => {
     console.log('Form values changed:', watchedFields);
+    console.log('Customer ID:', form.getValues('customerId'));
+    console.log('Marketing ID:', form.getValues('marketingId'));
   }, [watchedFields]);
 
   // Add toggle functions
@@ -1012,6 +1024,7 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
       // Set form values from initialData
       form.reset({
         customerId: initialData.customerId,
+        marketingId: initialData.marketingId || "",
         note: initialData.note || "",
         discount: initialData.discount || 0,
         orderItems: initialData.orderItems
@@ -1120,6 +1133,9 @@ export function OrderForm({ initialData, onSubmit, onCancel }: OrderFormProps) {
             </FormItem>
           )}
         />
+        
+        {/* Marketing User Selection */}
+        <MarketingSelector form={form} />
 
           {/* Order Items */}
         <div className="space-y-4">

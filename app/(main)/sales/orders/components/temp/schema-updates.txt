@@ -1,0 +1,87 @@
+The following updates need to be made to the order-form.tsx file:
+
+1. Add the import for the MarketingSelector component
+```typescript
+import { MarketingSelector } from "./marketing-selector";
+```
+
+2. Update the OrderWithCustomer interface to include marketingId (around line 71)
+```typescript
+interface OrderWithCustomer extends Omit<Order, 'discountType'> {
+  customer: Customer;
+  orderItems: PrismaOrderItem[];
+  discountType: "percentage" | "value";
+  marketingId?: string;
+}
+```
+
+3. Update the form schema (around line 98)
+```typescript
+const formSchema = z.object({
+  customerId: z.string().min(1, "Customer is required"),
+  marketingId: z.string().optional(),
+  orderItems: z.array(orderItemSchema).min(1, "At least one item is required"),
+  note: z.string().optional(),
+  discount: z.number().min(0, "Discount must be greater than or equal to 0").default(0),
+}).refine((data) => {
+  // Keep discount validation simple since we only use value-based discount now
+  return data.discount >= 0;
+}, {
+  message: "Discount must be a non-negative value",
+  path: ["discount"], 
+});
+```
+
+4. Update defaultValues (around line 126)
+```typescript
+const defaultValues: FormValues = {
+  customerId: "",
+  marketingId: "",
+  orderItems: [{
+    type: "Sublimation Paper",
+    product: undefined,
+    price: 0,
+    tax: 0,
+    quantity: 1
+  }],
+  note: "",
+  discount: 0,
+};
+```
+
+5. Update form initialization (around line 232)
+```typescript
+const form = useForm<FormValues>({
+  resolver: zodResolver(formSchema),
+  defaultValues: {
+    customerId: initialData?.customerId || "",
+    marketingId: initialData?.marketingId || "",
+    orderItems: initialData?.orderItems
+      // ...rest of the code
+```
+
+6. Update submissionData in handleSubmit (around line 780)
+```typescript
+const submissionData = {
+  customerId: data.customerId,
+  marketingId: data.marketingId,
+  orderItems,
+  note: data.note || "",
+  totalAmount: taxInclusiveSubtotal,
+  discount: Number(data.discount),
+  discountType: "value", // Always use value-based discount
+};
+```
+
+7. Add the MarketingSelector component in the form (right after the customer FormField)
+```jsx
+{/* Customer Selection */}
+<FormField
+  // ...existing customer form field code
+/>
+
+{/* Marketing Selection */}
+<MarketingSelector form={form} />
+
+{/* Order Items */}
+``` 

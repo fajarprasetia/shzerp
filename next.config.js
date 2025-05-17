@@ -14,8 +14,8 @@ const nextConfig = {
       },
     ],
   },
-  // Disable React strict mode temporarily to prevent double rendering issues
-  reactStrictMode: false,
+  // Enable React strict mode for better development experience
+  reactStrictMode: true,
   // Set output to 'standalone' for better compatibility
   output: 'standalone',
   // Disable TypeScript checking during build
@@ -34,6 +34,8 @@ const nextConfig = {
     serverActions: {
       allowedOrigins: ['localhost:3000', 'shunhuizhiye.id'],
     },
+    // Explicitly enable Fast Refresh
+    fastRefresh: true,
   },
   // Simplified webpack configuration
   webpack: (config, { isServer }) => {

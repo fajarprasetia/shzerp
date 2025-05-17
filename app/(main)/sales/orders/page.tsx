@@ -29,7 +29,6 @@ interface OrderWithCustomer {
   id: string;
   orderNo: string;
   customerId: string;
-  sales: string;
   type: string;
   totalAmount: number;
   tax: number;
@@ -40,6 +39,12 @@ interface OrderWithCustomer {
     name: string;
     company: string;
   };
+  marketingId: string | null;
+  marketing: {
+    id: string;
+    name: string;
+    email?: string | null;
+  } | null;
   orderItems: any[];
   note: string | null;
   paymentStatus: string | null;
@@ -56,7 +61,6 @@ interface OrderWithRelations {
   id: string;
   orderNo: string;
   customerId: string;
-  sales: string;
   type: string;
   totalAmount: number;
   tax: number;
@@ -67,6 +71,12 @@ interface OrderWithRelations {
     name: string;
     company: string;
   };
+  marketingId: string | null;
+  marketing: {
+    id: string;
+    name: string;
+    email?: string | null;
+  } | null;
   orderItems: any[];
   note: string | null;
   paymentStatus: string | null;

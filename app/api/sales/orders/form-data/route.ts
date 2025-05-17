@@ -6,7 +6,7 @@ export async function GET() {
     // Add debug log
     console.log('Fetching form data from database...');
 
-    const [customers, stocks, dividedStocks] = await Promise.all([
+    const [customers, stocks, dividedStocks, marketingUsers] = await Promise.all([
       prisma.customer.findMany({
         orderBy: { name: "asc" },
         select: {
@@ -56,6 +56,22 @@ export async function GET() {
             }
           }
         }
+      }),
+      // Fetch users with the Marketing role
+      prisma.user.findMany({
+        where: {
+          role: {
+            name: "Marketing"
+          }
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true
+        },
+        orderBy: {
+          name: "asc"
+        }
       })
     ]);
 
@@ -63,7 +79,8 @@ export async function GET() {
     console.log('Fetched data:', {
       customersCount: customers.length,
       stocksCount: stocks.length,
-      dividedStocksCount: dividedStocks.length
+      dividedStocksCount: dividedStocks.length,
+      marketingUsersCount: marketingUsers.length
     });
 
     const response = {
@@ -73,7 +90,8 @@ export async function GET() {
         ...d,
         gsm: d.stock.gsm,
         remainingLength: d.length
-      }))
+      })),
+      marketingUsers
     };
 
     console.log('Sending response:', response);

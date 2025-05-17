@@ -15,6 +15,7 @@ export async function GET(
       where: { id: id },
       include: {
         customer: true,
+        marketing: true,
         orderItems: true,
       },
     });
@@ -40,7 +41,7 @@ export async function PUT(
     const id = unwrappedParams.id;
     
     const body = await request.json();
-    const { customerId, orderItems, note, totalAmount } = body;
+    const { customerId, marketingId, orderItems, note, totalAmount } = body;
 
     // Validate required fields
     if (!customerId) {
@@ -105,6 +106,7 @@ export async function PUT(
       where: { id: id },
       data: {
         customerId,
+        marketingId: marketingId || null,
         note: note || null,
         totalAmount: totalAmount ? Number(totalAmount) : undefined,
         orderItems: {
@@ -126,6 +128,7 @@ export async function PUT(
       },
       include: {
         customer: true,
+        marketing: true,
         orderItems: true,
       },
     });

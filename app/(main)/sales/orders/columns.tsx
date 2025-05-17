@@ -25,7 +25,6 @@ export interface OrderWithRelations {
   id: string;
   orderNo: string;
   customerId: string;
-  sales: string;
   type: string;
   totalAmount: number;
   tax: number;
@@ -36,6 +35,12 @@ export interface OrderWithRelations {
     name: string;
     company: string;
   };
+  marketingId: string | null;
+  marketing: {
+    id: string;
+    name: string;
+    email?: string | null;
+  } | null;
   orderItems: any[];
   note: string | null;
   paymentStatus: string | null;
@@ -132,8 +137,14 @@ export function getColumns(
       },
     },
     {
-      accessorKey: "sales",
-      header: t('sales.orders.sales', 'Sales'),
+      id: "marketing",
+      header: t('sales.orders.marketing', 'Marketing'),
+      accessorFn: (row) => row.marketing?.name || '-',
+      cell: ({ row }) => {
+        // Get the marketing user name from the relation
+        const marketingName = row.original.marketing?.name || '-';
+        return marketingName;
+      },
       filterFn: (row, id, value) => {
         const searchValue = row.getValue(id)?.toString().toLowerCase() || '';
         return searchValue.includes(value.toLowerCase());

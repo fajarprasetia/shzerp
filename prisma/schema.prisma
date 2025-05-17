@@ -42,6 +42,7 @@ model User {
   vendorPayments       VendorPayment[]
   taxFilings          TaxFiling[]
   shipments            Shipment[]
+  marketingOrders      Order[]               @relation("MarketingUser")
 
   @@map("users")
 }
@@ -181,6 +182,8 @@ model Order {
   orderNo     String      @unique
   customerId  String
   customer    Customer    @relation(fields: [customerId], references: [id])
+  marketingId String?
+  marketing   User?       @relation(name: "MarketingUser", fields: [marketingId], references: [id])
   totalAmount Float       @default(0)
   discount    Float       @default(0)
   discountType String     @default("percentage")

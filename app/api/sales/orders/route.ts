@@ -18,6 +18,7 @@ interface OrderItem {
 
 interface CreateOrderRequest {
   customerId: string;
+  marketingId?: string;
   orderItems: {
     type: string;
     product?: string;
@@ -41,6 +42,7 @@ export async function GET() {
     const orders = await prisma.order.findMany({
       include: {
         customer: true,
+        marketing: true,
         orderItems: {
           include: {
             stock: true,
@@ -236,6 +238,7 @@ export async function POST(req: Request) {
         data: {
           orderNo: orderNumber,
           customerId: body.customerId,
+          marketingId: body.marketingId || null,
           totalAmount,
           discount: body.discount ? Number(body.discount) : 0,
           discountType: body.discountType || "percentage",
@@ -278,6 +281,7 @@ export async function POST(req: Request) {
           data: {
             orderNo: emergencyOrderNumber,
             customerId: body.customerId,
+            marketingId: body.marketingId || null,
             totalAmount,
             discount: body.discount ? Number(body.discount) : 0,
             discountType: body.discountType || "percentage",

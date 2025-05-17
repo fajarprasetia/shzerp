@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Stock, Divided, Customer } from "@prisma/client";
+import { Stock, Divided, Customer, User } from "@prisma/client";
 
 interface StockWithInspector extends Stock {
   inspector?: { name: string } | null;
@@ -15,10 +15,17 @@ interface DividedWithGSM extends Divided {
   gsm?: number; // Added for compatibility with the form
 }
 
+interface MarketingUser {
+  id: string;
+  name: string;
+  email?: string;
+}
+
 interface OrderFormData {
   customers: Customer[];
   stocks: StockWithInspector[];
   dividedStocks: DividedWithGSM[];
+  marketingUsers: MarketingUser[];
   isLoading: boolean;
 }
 
@@ -26,31 +33,26 @@ export function useOrderFormData(): OrderFormData {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [stocks, setStocks] = useState<StockWithInspector[]>([]);
   const [dividedStocks, setDividedStocks] = useState<DividedWithGSM[]>([]);
+  const [marketingUsers, setMarketingUsers] = useState<MarketingUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [customersRes, stocksRes, dividedStocksRes] = await Promise.all([
-          fetch("/api/sales/customer"),
-          fetch("/api/inventory/stock"),
-          fetch("/api/inventory/divided"),
-        ]);
-
-        if (!customersRes.ok || !stocksRes.ok || !dividedStocksRes.ok) {
+        // Use the form-data endpoint that now includes marketing users
+        const response = await fetch("/api/sales/orders/form-data");
+        
+        if (!response.ok) {
           throw new Error("Failed to fetch data");
         }
 
-        const [customersData, stocksData, dividedStocksRawData] = await Promise.all([
-          customersRes.json(),
-          stocksRes.json(),
-          dividedStocksRes.json(),
-        ]);
-
+        const data = await response.json();
+        
         // Ensure we have arrays even if the API returns null/undefined
-        const safeCustomersData = Array.isArray(customersData) ? customersData : [];
-        const safeStocksData = Array.isArray(stocksData) ? stocksData : [];
-        const safeDividedStocksData = Array.isArray(dividedStocksRawData) ? dividedStocksRawData : [];
+        const safeCustomersData = Array.isArray(data.customers) ? data.customers : [];
+        const safeStocksData = Array.isArray(data.stocks) ? data.stocks : [];
+        const safeDividedStocksData = Array.isArray(data.dividedStocks) ? data.dividedStocks : [];
+        const safeMarketingUsersData = Array.isArray(data.marketingUsers) ? data.marketingUsers : [];
 
         // Process divided stocks to add gsm property directly on the object
         const processedDividedStocks = safeDividedStocksData.map((divided: DividedWithGSM) => ({
@@ -71,16 +73,19 @@ export function useOrderFormData(): OrderFormData {
         console.log("Fetched customers:", safeCustomersData);
         console.log("Filtered stocks:", filteredStocks);
         console.log("Processed divided stocks:", filteredDividedStocks);
+        console.log("Marketing users:", safeMarketingUsersData);
 
         setCustomers(safeCustomersData);
         setStocks(filteredStocks);
         setDividedStocks(filteredDividedStocks);
+        setMarketingUsers(safeMarketingUsersData);
       } catch (error) {
         console.error("Error fetching order form data:", error);
         // Set empty arrays on error to prevent undefined values
         setCustomers([]);
         setStocks([]);
         setDividedStocks([]);
+        setMarketingUsers([]);
       } finally {
         setIsLoading(false);
       }
@@ -93,6 +98,7 @@ export function useOrderFormData(): OrderFormData {
     customers: customers || [],
     stocks: stocks || [],
     dividedStocks: dividedStocks || [],
+    marketingUsers: marketingUsers || [],
     isLoading,
   };
 } 
