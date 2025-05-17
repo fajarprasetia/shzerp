@@ -4,7 +4,7 @@ import { prisma } from '@/app/lib/prisma';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const barcodeId = searchParams.get('barcodeId');
+    const barcodeId = searchParams.get('barcode') || searchParams.get('barcodeId');
 
     if (!barcodeId) {
       return NextResponse.json(
@@ -17,13 +17,25 @@ export async function GET(request: NextRequest) {
     const existingStock = await prisma.stock.findFirst({
       where: {
         barcodeId: barcodeId
+      },
+      include: {
+        inspectedBy: {
+          select: {
+            name: true
+          }
+        }
       }
     });
 
-    return NextResponse.json({
-      exists: !!existingStock,
-      stockId: existingStock?.id || null
-    });
+    if (!existingStock) {
+      return NextResponse.json(
+        { error: 'Stock not found with this barcode' },
+        { status: 404 }
+      );
+    }
+
+    // Return full stock details
+    return NextResponse.json(existingStock);
   } catch (error) {
     console.error('Error validating barcode:', error);
     return NextResponse.json(

@@ -34,8 +34,6 @@ const nextConfig = {
     serverActions: {
       allowedOrigins: ['localhost:3000', 'shunhuizhiye.id'],
     },
-    // Explicitly enable Fast Refresh
-    fastRefresh: true,
   },
   // Simplified webpack configuration
   webpack: (config, { isServer }) => {

@@ -158,8 +158,9 @@ export function DividedStockForm({ mode, onSuccess, onCancel }: DividedStockForm
 
           // Perform validation
           try {
-            // Directly fetch stock data without using validation function
-            const response = await fetch(`/api/inventory/stock/validate?barcode=${result.data}`);
+            // Properly encode the barcode value for the URL
+            const encodedBarcode = encodeURIComponent(result.data);
+            const response = await fetch(`/api/inventory/stock/validate?barcode=${encodedBarcode}`);
             
             if (!response.ok) {
               const errorData = await response.json();
@@ -169,30 +170,34 @@ export function DividedStockForm({ mode, onSuccess, onCancel }: DividedStockForm
             const stockData = await response.json();
             console.log("Scanned stock data:", stockData);
             
-            // Verify it's inspected and has available length
-            if (!stockData.inspected || stockData.remainingLength <= 0) {
-              const errorMessage = !stockData.inspected 
-                ? "This stock has not been inspected yet"
-                : "This stock has no remaining length available";
-              
-              toast.error(errorMessage);
+            // Verify it's inspected
+            if (!stockData.inspected) {
+              toast.error("This stock must be inspected before it can be divided. Please complete the inspection process first.");
               setStock(null);
-            } else {
-              // Successfully fetched valid stock data
-              setStock(stockData);
-              
-              // Calculate recommended number of rolls
-              const meterPerRoll = newForm.getValues("meterPerRoll") || 100;
-              const recommendedCount = Math.floor(stockData.remainingLength / meterPerRoll);
-              
-              // Update number of rolls if the current value exceeds recommended count
-              const currentCount = newForm.getValues("numberOfRolls") || 1;
-              if (currentCount > recommendedCount) {
-                newForm.setValue("numberOfRolls", recommendedCount > 0 ? recommendedCount : 1);
-              }
-              
-              toast.success("Stock selected successfully");
+              return;
             }
+            
+            // Verify it has available length
+            if (stockData.remainingLength <= 0) {
+              toast.error("This stock has no remaining length available");
+              setStock(null);
+              return;
+            }
+            
+            // Successfully fetched valid stock data
+            setStock(stockData);
+            
+            // Calculate recommended number of rolls
+            const meterPerRoll = newForm.getValues("meterPerRoll") || 100;
+            const recommendedCount = Math.floor(stockData.remainingLength / meterPerRoll);
+            
+            // Update number of rolls if the current value exceeds recommended count
+            const currentCount = newForm.getValues("numberOfRolls") || 1;
+            if (currentCount > recommendedCount) {
+              newForm.setValue("numberOfRolls", recommendedCount > 0 ? recommendedCount : 1);
+            }
+            
+            toast.success("Stock selected successfully");
           } catch (error) {
             console.error("Error validating barcode:", error);
             toast.error(error instanceof Error ? error.message : "Invalid barcode");
@@ -234,24 +239,29 @@ export function DividedStockForm({ mode, onSuccess, onCancel }: DividedStockForm
         return false;
       }
       
-      // Fetch stock data directly
-      const response = await fetch(`/api/inventory/stock/validate?barcode=${barcode}`);
+      // Properly encode the barcode value for the URL
+      const encodedBarcode = encodeURIComponent(barcode);
+      const response = await fetch(`/api/inventory/stock/validate?barcode=${encodedBarcode}`);
       
       if (!response.ok) {
         const errorData = await response.json();
+        console.error("Error fetching stock data:", errorData);
         throw new Error(errorData.error || "Invalid barcode");
       }
       
       const stockData = await response.json();
       console.log("Validation result:", stockData);
       
-      // Verify it's inspected and has available length
-      if (!stockData.inspected || stockData.remainingLength <= 0) {
-        const errorMessage = !stockData.inspected 
-          ? "This stock has not been inspected yet"
-          : "This stock has no remaining length available";
-            
-        toast.error(errorMessage);
+      // Verify it's inspected
+      if (!stockData.inspected) {
+        toast.error("This stock must be inspected before it can be divided. Please complete the inspection process first.");
+        setStock(null);
+        return false;
+      }
+      
+      // Verify it has available length
+      if (stockData.remainingLength <= 0) {
+        toast.error("This stock has no remaining length available");
         setStock(null);
         return false;
       }
@@ -300,13 +310,13 @@ export function DividedStockForm({ mode, onSuccess, onCancel }: DividedStockForm
       debounceTimerRef.current = setTimeout(async () => {
         try {
           console.log("Attempting to fetch stock data for barcode:", value);
-          // Direct API call without using the validation function
-          const response = await fetch(`/api/inventory/stock/validate?barcode=${value}`);
           
-          let errorData;
+          // Properly encode the barcode value for the URL
+          const encodedBarcode = encodeURIComponent(value);
+          const response = await fetch(`/api/inventory/stock/validate?barcode=${encodedBarcode}`);
           
           if (!response.ok) {
-            errorData = await response.json();
+            const errorData = await response.json();
             console.error("Error fetching stock data:", errorData);
             
             // Display the error message in a toast notification
@@ -324,13 +334,14 @@ export function DividedStockForm({ mode, onSuccess, onCancel }: DividedStockForm
           console.log("Fetched stock data:", stockData);
           
           // Verify it's inspected and has available length
-          if (!stockData.inspected || stockData.remainingLength <= 0) {
-            const errorMessage = !stockData.inspected 
-              ? "This stock has not been inspected yet"
-              : "This stock has no remaining length available";
-                
-            console.warn("Stock validation failed:", errorMessage);
-            toast.error(`Stock validation failed: ${errorMessage}`);
+          if (!stockData.inspected) {
+            toast.error("This stock must be inspected before it can be divided. Please complete the inspection process first.");
+            setStock(null);
+            return;
+          }
+          
+          if (stockData.remainingLength <= 0) {
+            toast.error("This stock has no remaining length available");
             setStock(null);
             return;
           }
@@ -351,8 +362,8 @@ export function DividedStockForm({ mode, onSuccess, onCancel }: DividedStockForm
           
           toast.success("Stock selected successfully");
         } catch (error) {
-          console.error("Error during stock validation:", error);
-          toast.error(error instanceof Error ? error.message : "Failed to validate stock");
+          console.error("Error fetching stock data:", error);
+          toast.error("Failed to validate stock. Please check the barcode and try again.");
           setStock(null);
         }
       }, 300);
